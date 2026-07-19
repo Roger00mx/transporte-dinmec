@@ -1,0 +1,22 @@
+# Configuración automática para Render.com (https://render.com)
+# Con este archivo, Render crea el servicio y el disco persistente solos.
+services:
+  - type: web
+    name: transporte-dinmec
+    runtime: node
+    plan: starter            # plan con disco persistente (~$7 USD/mes)
+    region: oregon           # puedes cambiarlo (oregon, ohio, frankfurt, singapore)
+    buildCommand: npm install
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: DIR_DATOS
+        value: /datos         # la app guardará base de datos y fotos aquí
+      - key: NODE_VERSION
+        value: "24"
+      # - key: MONITOR_URL   # (opcional) dirección pública del Monitor DINMEC
+      #   value: https://tu-monitor.ejemplo.com
+    disk:
+      name: datos-transporte
+      mountPath: /datos       # disco que NO se borra al reiniciar
+      sizeGB: 1

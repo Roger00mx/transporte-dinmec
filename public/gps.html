@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPS — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  #map{height:56vh;min-height:340px;border-radius:12px;box-shadow:var(--sombra);border:1px solid var(--linea);margin-top:14px}
+  .autos{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:14px}
+  .auto{background:#fff;border-radius:var(--r);box-shadow:var(--sombra);border:1px solid var(--linea);padding:14px;cursor:pointer}
+  .auto .nom{font-weight:700;color:var(--azul);display:flex;align-items:center;gap:8px}
+  .auto .dato{font-size:.85rem;color:var(--gris);margin-top:3px}
+  .punto{width:11px;height:11px;border-radius:50%;display:inline-block}
+  .punto.mov{background:#0f9d58;animation:pulso 1.6s infinite}
+  .punto.det{background:#e8a317}
+  .punto.sin{background:#9aa3ad}
+  .aviso-monitor{background:var(--ambar-bg);border:1px solid #eccf9a;border-radius:12px;padding:16px;margin-top:14px;color:#7a5408}
+</style>
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <span class="envivo" id="envivo" style="display:none"><i></i> actualizando</span>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" onclick="location.href='index.html'">← Inicio</button>
+</div>
+
+<div class="contenedor">
+  <div class="nav-sec">
+    <a href="index.html">🚚 Salidas</a>
+    <a href="gasolina.html">⛽ Gasolina</a>
+    <a href="incidentes.html">⚠️ Incidentes</a>
+    <a href="flota.html">🚛 Flota</a>
+    <a class="activa" href="gps.html">📍 GPS</a>
+  </div>
+  <div class="seccion-tit">
+    <h2>Posición de las unidades</h2>
+    <div style="flex:1"></div>
+    <span style="font-size:.8rem;color:var(--gris)" id="ultima-act"></span>
+  </div>
+  <div class="aviso-monitor" id="aviso" style="display:none"></div>
+  <div id="map" style="display:none"></div>
+  <div class="autos" id="autos"></div>
+</div>
+
+<script src="comun.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let YO=null, map=null, markers={}, fitted=false;
+
+function iconoAuto(color){
+  return L.divIcon({
+    className:"",
+    html:`<div style="background:${color};width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4);font-size:16px">🚚</div>`,
+    iconSize:[34,34], iconAnchor:[17,17]
+  });
+}
+
+async function inicio(){
+  YO=await exigirSesion(); if(!YO) return;
+  await actualizar();
+  setInterval(actualizar, 30000);
+}
+
+function hace(ms){
+  if(!ms) return "nunca";
+  const min=Math.round((Date.now()-ms)/60000);
+  if(min<1) return "hace un momento";
+  if(min<60) return "hace "+min+" min";
+  return "hace "+Math.floor(min/60)+" h "+(min%60)+" min";
+}
+
+async function actualizar(){
+  const d=await api.get("/api/gps");
+  const aviso=document.getElementById("aviso");
+  if(!d.ok){
+    aviso.style.display="block";
+    aviso.innerHTML="⚠️ "+escaparHTML(d.error||"Monitor no disponible")+
+      "<br><span style='font-size:.85rem'>El GPS lo lee tu <b>Monitor DINMEC</b> (carpeta monitor-dinmec). Enciéndelo con su acceso directo y esta página se conectará sola.</span>";
+    document.getElementById("envivo").style.display="none";
+    return;
+  }
+  aviso.style.display="none";
+  document.getElementById("envivo").style.display="inline-flex";
+  document.getElementById("ultima-act").textContent="Actualizado: "+new Date().toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"});
+
+  // mapa
+  const mapDiv=document.getElementById("map");
+  if(mapDiv.style.display==="none"){
+    mapDiv.style.display="block";
+    map=L.map("map").setView([19.06,-98.2],7);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(map);
+  }
+
+  const bounds=[];
+  const colores={"en movimiento":"#0f9d58","detenido":"#e8a317"};
+  document.getElementById("autos").innerHTML=(d.vehicles||[]).map(v=>{
+    const clase=v.estado==="en movimiento"?"mov":v.estado==="detenido"?"det":"sin";
+    if(v.fix){
+      bounds.push([v.fix.lat,v.fix.lng]);
+      const color=colores[v.estado]||"#9aa3ad";
+      if(markers[v.imei]){ markers[v.imei].setLatLng([v.fix.lat,v.fix.lng]); markers[v.imei].setIcon(iconoAuto(color)); }
+      else markers[v.imei]=L.marker([v.fix.lat,v.fix.lng],{icon:iconoAuto(color)}).addTo(map).bindPopup(v.name);
+    }
+    return `<div class="auto" onclick="centrar('${v.imei}')">
+      <div class="nom"><span class="punto ${clase}"></span> ${escaparHTML(v.name)}</div>
+      <div class="dato"><b>${v.estado==="en movimiento"?"🟢 En movimiento":v.estado==="detenido"?"🟡 Detenido":"⚪ "+v.estado}</b>
+        ${v.estado==="detenido"&&v.stoppedMinutes!==null?(" · lleva "+v.stoppedMinutes+" min"):""}</div>
+      ${v.fix?`<div class="dato">Velocidad: ${Math.round(v.fix.speed)} km/h · Motor: ${v.fix.acc?"encendido":"apagado"}</div>
+      <div class="dato">Señal: ${hace(v.lastSeen)} · <a href="https://maps.google.com/?q=${v.fix.lat},${v.fix.lng}" target="_blank" onclick="event.stopPropagation()">🗺️ Google Maps</a></div>`
+      :`<div class="dato">Sin posición todavía.</div>`}
+    </div>`;
+  }).join("") || `<div class="vacio">El Monitor no tiene vehículos configurados. Configúralos en el Monitor DINMEC.</div>`;
+
+  if(!fitted && bounds.length){ map.fitBounds(bounds,{padding:[40,40],maxZoom:13}); fitted=true; }
+}
+
+function centrar(imei){
+  if(markers[imei] && map){ map.setView(markers[imei].getLatLng(),15); markers[imei].openPopup(); }
+}
+
+inicio();
+</script>
+</body>
+</html>

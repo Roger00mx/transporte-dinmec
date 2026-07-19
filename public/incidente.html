@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incidente — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" onclick="location.href='incidentes.html'">← Volver</button>
+</div>
+
+<div class="contenedor" id="cont" style="display:none">
+  <div class="seccion-tit">
+    <h2 id="titulo">⚠️ Reportar incidente</h2>
+    <div style="flex:1"></div>
+    <button class="btn peligro chico" id="btn-borrar" style="display:none">🗑️ Eliminar</button>
+  </div>
+
+  <div class="cabecera">
+    <h3>📋 Datos del incidente o percance</h3>
+    <div class="campos">
+      <div class="campo">
+        <label>Fecha</label>
+        <input id="f-fecha" type="date">
+      </div>
+      <div class="campo">
+        <label>Hora</label>
+        <div style="display:flex;gap:8px">
+          <input id="f-hora" type="time" style="flex:1">
+          <button class="btn chico" id="btn-ahora" title="Poner la hora actual">🕐 Ahora</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label>Unidad</label>
+        <select id="f-unidad"></select>
+      </div>
+      <div class="campo">
+        <label>¿Quién reporta?</label>
+        <input id="f-reporta" placeholder="Tu nombre">
+      </div>
+      <div class="campo ancho">
+        <label>Descripción de la falla o percance</label>
+        <textarea id="f-descripcion" rows="3" placeholder="Describe qué pasó: falla mecánica, golpe, ponchadura, etc."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="cabecera" id="sec-fotos" style="display:none">
+    <h3>📷 Fotos del incidente</h3>
+    <div class="fotos-grid" id="fotos"></div>
+  </div>
+  <div class="cabecera" id="aviso-fotos">
+    <p style="margin:0;color:var(--gris)">💡 Primero <b>guarda el reporte</b>; después podrás agregar las fotos.</p>
+  </div>
+
+  <div class="pie-acciones">
+    <span class="guardado" id="guardado"></span>
+    <button class="btn primario" id="btn-guardar">💾 Guardar</button>
+  </div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let YO=null, ID=paramURL("id"), INC=null;
+
+async function inicio(){
+  YO = await exigirSesion(); if(!YO) return;
+  const unidades = await api.get("/api/unidades");
+  document.getElementById("f-unidad").innerHTML =
+    `<option value="">— Elige unidad —</option>` +
+    unidades.map(u=>`<option value="${escaparHTML(u.nombre)}">${escaparHTML(u.nombre)}</option>`).join("");
+  if(ID){
+    INC = await api.get("/api/incidente/"+ID);
+    if(INC.error){ aviso(INC.error); setTimeout(()=>location.href="incidentes.html",1200); return; }
+    if(INC.unidad && ![...document.getElementById("f-unidad").options].some(o=>o.value===INC.unidad)){
+      document.getElementById("f-unidad").insertAdjacentHTML("beforeend",`<option value="${escaparHTML(INC.unidad)}">${escaparHTML(INC.unidad)}</option>`);
+    }
+  }
+  pintar();
+  document.getElementById("cont").style.display="block";
+}
+
+function pintar(){
+  const i = INC || {};
+  document.getElementById("titulo").textContent = ID ? "⚠️ Incidente" : "⚠️ Reportar incidente";
+  pon("f-fecha", i.fecha || fechaHoy());
+  pon("f-hora", i.hora ?? horaAhora());
+  pon("f-unidad", i.unidad);
+  pon("f-reporta", i.reporta ?? YO.nombre);
+  pon("f-descripcion", i.descripcion);
+  document.getElementById("btn-guardar").onclick=guardar;
+  document.getElementById("btn-ahora").onclick=(e)=>{e.preventDefault();document.getElementById("f-hora").value=horaAhora();};
+  if(ID){
+    document.getElementById("sec-fotos").style.display="block";
+    document.getElementById("aviso-fotos").style.display="none";
+    pintarFotos();
+    if(YO.rol_app==="admin"){
+      const bb=document.getElementById("btn-borrar");
+      bb.style.display="inline-flex";
+      bb.onclick=borrar;
+    }
+  }
+}
+
+function pon(id,valor){ document.getElementById(id).value = valor || ""; }
+function val(id){ return document.getElementById(id).value.trim(); }
+
+async function guardar(){
+  const d={ fecha:val("f-fecha"), hora:val("f-hora"), unidad:val("f-unidad"), reporta:val("f-reporta"), descripcion:val("f-descripcion") };
+  if(!d.unidad){ aviso("Elige la unidad"); return; }
+  if(!d.descripcion){ aviso("Describe la falla o percance"); return; }
+  if(!ID){
+    const r=await api.post("/api/incidentes", d);
+    if(r.id){ aviso("Incidente reportado ✅ Ahora puedes subir fotos"); location.href="incidente.html?id="+r.id; }
+    else aviso(r.error||"No se pudo guardar");
+    return;
+  }
+  const r=await api.put("/api/incidente/"+ID, d);
+  if(r.ok){
+    document.getElementById("guardado").textContent="Guardado ✓ "+horaAhora();
+    aviso("Guardado ✅");
+    INC = await api.get("/api/incidente/"+ID);
+    pintar();
+  } else aviso(r.error||"No se pudo guardar");
+}
+
+async function borrar(){
+  if(!confirm("¿Eliminar este reporte por completo?")) return;
+  const r=await api.del("/api/incidente/"+ID);
+  if(r.ok){ location.href="incidentes.html"; } else aviso(r.error||"No se pudo eliminar");
+}
+
+function pintarFotos(){
+  const cont=document.getElementById("fotos");
+  const fotos=(INC&&INC.fotos)||[];
+  cont.innerHTML = fotos.map(f=>`
+    <div class="foto-item">
+      <img src="${f.url}" onclick="window.open('${f.url}','_blank')" style="cursor:zoom-in">
+      <button onclick="borrarFoto('${f.id}')" title="Eliminar foto">×</button>
+    </div>`).join("") + `
+    <label class="foto-add">📷<span>Agregar foto</span>
+      <input type="file" accept="image/*" capture="environment" multiple onchange="subirFotos(this.files)">
+    </label>`;
+}
+async function subirFotos(files){
+  for(const file of files){
+    aviso("Subiendo foto…");
+    const blob=await comprimirImagen(file);
+    const r=await fetch("/api/incidente/"+ID+"/foto?nombre="+encodeURIComponent(file.name.replace(/\.[^.]+$/,".jpg")),{method:"POST",body:blob});
+    const j=await r.json();
+    if(j.error){ aviso(j.error); return; }
+  }
+  aviso("Fotos guardadas ✅");
+  INC=await api.get("/api/incidente/"+ID);
+  pintarFotos();
+}
+async function borrarFoto(fid){
+  if(!confirm("¿Eliminar esta foto?")) return;
+  await api.del("/api/foto/"+fid);
+  INC=await api.get("/api/incidente/"+ID);
+  pintarFotos();
+}
+
+inicio();
+</script>
+</body>
+</html>

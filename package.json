@@ -1,0 +1,9 @@
+{
+  "name": "transporte-dinmec",
+  "version": "1.0.0",
+  "description": "Control de Transporte DINMEC - bitácora digital de salidas de unidades",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

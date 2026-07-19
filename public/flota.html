@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flota — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+<style>
+  .unidad-card{background:#fff;border-radius:var(--r);box-shadow:var(--sombra);border:1px solid var(--linea);padding:18px;margin-top:14px}
+  .unidad-card h3{color:var(--azul);display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .unidad-card h3 .kmact{font-size:.85rem;color:var(--gris);font-weight:600}
+  .estado-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+  .panel{border:1px solid var(--linea);border-radius:10px;padding:12px;background:#fbfcfe}
+  .panel .tit{font-weight:700;color:var(--azul);font-size:.9rem;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .panel .dato{font-size:.88rem;margin:3px 0}
+  .panel .dato b{color:var(--gris);font-weight:600}
+  .alerta{display:inline-block;font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:20px;margin-left:6px}
+  .alerta.ok{background:var(--verde-bg);color:var(--verde)}
+  .alerta.pronto{background:var(--ambar-bg);color:#a4700a}
+  .alerta.vencido{background:#fdeaea;color:var(--rojo)}
+  .barraprog{height:8px;background:var(--gris-claro);border-radius:6px;overflow:hidden;margin-top:6px}
+  .barraprog > i{display:block;height:100%;border-radius:6px;transition:width .4s;background:var(--verde)}
+  .barraprog.pronto > i{background:var(--ambar)}
+  .barraprog.vencido > i{background:var(--rojo)}
+  .docs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .doc-item{position:relative;width:90px;height:90px;border-radius:10px;overflow:hidden;border:1px solid var(--linea);background:#fff;display:flex;align-items:center;justify-content:center}
+  .doc-item img{width:100%;height:100%;object-fit:cover;cursor:zoom-in}
+  .doc-item .pdfic{font-size:2rem;cursor:pointer;text-decoration:none}
+  .doc-item button{position:absolute;top:3px;right:3px;background:rgba(210,63,63,.92);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-weight:700;line-height:1}
+  .doc-add{width:90px;height:90px;border:2px dashed var(--pri-claro);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--pri);cursor:pointer;font-size:.7rem;font-weight:600;background:var(--pri-bg)}
+  .doc-add input{display:none}
+</style>
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" onclick="location.href='index.html'">← Inicio</button>
+</div>
+
+<div class="contenedor">
+  <div class="nav-sec">
+    <a href="index.html">🚚 Salidas</a>
+    <a href="gasolina.html">⛽ Gasolina</a>
+    <a href="incidentes.html">⚠️ Incidentes</a>
+    <a class="activa" href="flota.html">🚛 Flota</a>
+    <a href="gps.html">📍 GPS</a>
+  </div>
+  <div class="seccion-tit"><h2>Flota: servicio, verificación y póliza</h2></div>
+  <p style="color:var(--gris);font-size:.9rem;margin-top:0">
+    El kilometraje se toma automáticamente de las cargas de gasolina.
+    El servicio se marca cada <b>10,000 km</b>.
+  </p>
+  <div id="lista"></div>
+</div>
+
+<!-- Modal editar ficha -->
+<div class="modal-fondo" id="modal" style="display:none">
+  <div class="modal">
+    <h2 id="m-titulo">Ficha de la unidad</h2>
+    <div class="campos">
+      <div class="campo"><label>Km del último servicio</label><input id="m-servicio_km" type="number" inputmode="numeric" placeholder="Ej. 40000"></div>
+      <div class="campo"><label>Fecha del último servicio</label><input id="m-servicio_fecha" type="date"></div>
+      <div class="campo"><label>Última verificación vehicular</label><input id="m-verif_ultima" type="date"></div>
+      <div class="campo"><label>Vence la verificación</label><input id="m-verif_vence" type="date"></div>
+      <div class="campo"><label>Aseguradora</label><input id="m-poliza_aseguradora" placeholder="Ej. Qualitas"></div>
+      <div class="campo"><label>No. de póliza</label><input id="m-poliza_numero" placeholder="Ej. 123456789"></div>
+      <div class="campo"><label>Vence la póliza</label><input id="m-poliza_vence" type="date"></div>
+      <div class="campo">
+        <label>GPS del Monitor DINMEC</label>
+        <select id="m-gps_imei"><option value="">— Sin GPS vinculado —</option></select>
+        <span class="nota">Vincula esta unidad con su GPS para ver su ruta en el resumen de cada viaje.</span>
+      </div>
+    </div>
+    <div class="acciones">
+      <button class="btn" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn primario" onclick="guardarFicha()">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let YO=null, FLOTA=[], EDIT_ID=null;
+const puedeEditar=()=>YO.rol_app==="admin"||YO.rol_app==="supervisor";
+
+let GPS_VEHICULOS=[];
+async function inicio(){
+  YO=await exigirSesion(); if(!YO) return;
+  await cargar();
+  conectarEnVivo(()=>cargar());
+  // lista de GPS disponibles del Monitor (para vincular unidades)
+  try{
+    const g=await api.get("/api/gps");
+    if(g.ok) GPS_VEHICULOS=g.vehicles||[];
+  }catch{}
+  const sel=document.getElementById("m-gps_imei");
+  sel.innerHTML=`<option value="">— Sin GPS vinculado —</option>`+
+    GPS_VEHICULOS.map(v=>`<option value="${escaparHTML(v.imei)}">${escaparHTML(v.name)} (${escaparHTML(v.imei)})</option>`).join("");
+}
+async function cargar(){
+  FLOTA=await api.get("/api/flota");
+  pintar();
+}
+
+function diasPara(fechaISO){
+  if(!fechaISO) return null;
+  return Math.round((new Date(fechaISO+"T12:00")-new Date())/86400000);
+}
+function estadoFecha(vence){
+  const d=diasPara(vence);
+  if(d===null) return {clase:"",texto:""};
+  if(d<0) return {clase:"vencido",texto:"VENCIDA hace "+Math.abs(d)+" días"};
+  if(d<=30) return {clase:"pronto",texto:"vence en "+d+" días"};
+  return {clase:"ok",texto:"vigente ("+d+" días)"};
+}
+
+function pintar(){
+  const cont=document.getElementById("lista");
+  if(!FLOTA.length){ cont.innerHTML=`<div class="vacio">No hay unidades. El administrador puede agregarlas en "Usuarios y unidades".</div>`; return; }
+  cont.innerHTML=FLOTA.map(u=>{
+    // ---- servicio cada 10,000 km ----
+    let servHTML;
+    if(u.ultimo_km===null){
+      servHTML=`<div class="dato" style="color:var(--gris)">Aún no hay kilometraje registrado. Se toma de las cargas de gasolina.</div>`;
+    } else if(u.km_desde_servicio===null){
+      servHTML=`<div class="dato" style="color:var(--gris)">Registra el km del último servicio (✏️ Editar ficha) para llevar la cuenta.</div>`;
+    } else {
+      const pct=Math.min(100,Math.max(0,(u.km_desde_servicio/u.servicio_cada)*100));
+      const clase=u.km_desde_servicio>=u.servicio_cada?"vencido":(u.km_desde_servicio>=u.servicio_cada-1000?"pronto":"ok");
+      const texto=u.km_desde_servicio>=u.servicio_cada
+        ? "SERVICIO VENCIDO ("+Number(u.km_desde_servicio).toLocaleString()+" km recorridos)"
+        : "faltan "+Number(u.servicio_cada-u.km_desde_servicio).toLocaleString()+" km";
+      servHTML=`
+        <div class="dato"><b>Último servicio:</b> ${Number(parseFloat(u.servicio_km)).toLocaleString()} km ${u.servicio_fecha?("("+fechaBonita(u.servicio_fecha)+")"):""}</div>
+        <div class="dato"><b>Próximo servicio:</b> ${Number(u.proximo_servicio_km).toLocaleString()} km <span class="alerta ${clase}">${texto}</span></div>
+        <div class="barraprog ${clase}"><i style="width:${pct}%"></i></div>`;
+    }
+    // ---- verificación ----
+    const ev=estadoFecha(u.verif_vence);
+    const verifHTML = (u.verif_ultima||u.verif_vence) ? `
+      <div class="dato"><b>Última:</b> ${u.verif_ultima?fechaBonita(u.verif_ultima):"—"}</div>
+      <div class="dato"><b>Vence:</b> ${u.verif_vence?fechaBonita(u.verif_vence):"—"}
+        ${ev.texto?`<span class="alerta ${ev.clase}">${ev.texto}</span>`:""}</div>`
+      : `<div class="dato" style="color:var(--gris)">Sin datos. Usa ✏️ Editar ficha.</div>`;
+    // ---- póliza ----
+    const ep=estadoFecha(u.poliza_vence);
+    const docs=(u.docs_poliza||[]).map(d=>{
+      const esPDF=/\.pdf$/i.test(d.url);
+      return `<div class="doc-item">
+        ${esPDF?`<a class="pdfic" href="${d.url}" target="_blank" title="${escaparHTML(d.nombre)}">📄</a>`
+               :`<img src="${d.url}" onclick="window.open('${d.url}','_blank')">`}
+        ${puedeEditar()?`<button onclick="borrarDoc('${d.id}')" title="Eliminar">×</button>`:""}
+      </div>`;
+    }).join("");
+    const polizaHTML=`
+      ${(u.poliza_aseguradora||u.poliza_numero)?`<div class="dato"><b>${escaparHTML(u.poliza_aseguradora||"Póliza")}:</b> ${escaparHTML(u.poliza_numero||"")}</div>`:""}
+      ${u.poliza_vence?`<div class="dato"><b>Vence:</b> ${fechaBonita(u.poliza_vence)} <span class="alerta ${ep.clase}">${ep.texto}</span></div>`
+        :`<div class="dato" style="color:var(--gris)">Sin fecha de vencimiento.</div>`}
+      <div class="docs">
+        ${docs}
+        ${puedeEditar()?`<label class="doc-add">📎<span>Subir póliza</span><span style="font-size:.6rem">(foto o PDF)</span>
+          <input type="file" accept="image/*,.pdf" onchange="subirDoc('${u.id}',this.files)"></label>`:""}
+      </div>`;
+
+    return `<div class="unidad-card">
+      <h3>🚛 ${escaparHTML(u.nombre)}
+        <span class="kmact">${u.ultimo_km!==null?("· "+Number(u.ultimo_km).toLocaleString()+" km ("+fechaBonita(u.ultimo_km_fecha)+")"):"· sin kilometraje aún"}</span>
+        <span style="flex:1"></span>
+        ${puedeEditar()?`<button class="btn chico fantasma" onclick="abrirModal('${u.id}')">✏️ Editar ficha</button>
+        <button class="btn chico verde" onclick="registrarServicio('${u.id}','${escaparHTML(u.nombre)}',${u.ultimo_km===null?"null":u.ultimo_km})">🔧 Registrar servicio</button>`:""}
+      </h3>
+      <div class="estado-grid">
+        <div class="panel"><div class="tit">🔧 Servicio (cada 10,000 km)</div>${servHTML}</div>
+        <div class="panel"><div class="tit">✅ Verificación vehicular</div>${verifHTML}</div>
+        <div class="panel"><div class="tit">🛡️ Póliza de seguro</div>${polizaHTML}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ---- Editar ficha ----
+function abrirModal(id){
+  EDIT_ID=id;
+  const u=FLOTA.find(f=>f.id===id);
+  document.getElementById("m-titulo").textContent="Ficha de "+u.nombre;
+  ["servicio_km","servicio_fecha","verif_ultima","verif_vence","poliza_aseguradora","poliza_numero","poliza_vence","gps_imei"]
+    .forEach(c=>document.getElementById("m-"+c).value=u[c]||"");
+  // si el imei guardado no está en la lista (Monitor apagado), agregarlo para no perderlo
+  const sel=document.getElementById("m-gps_imei");
+  if(u.gps_imei && ![...sel.options].some(o=>o.value===u.gps_imei)){
+    sel.insertAdjacentHTML("beforeend",`<option value="${escaparHTML(u.gps_imei)}">GPS ${escaparHTML(u.gps_imei)}</option>`);
+    sel.value=u.gps_imei;
+  }
+  document.getElementById("modal").style.display="flex";
+}
+function cerrarModal(){ document.getElementById("modal").style.display="none"; }
+async function guardarFicha(){
+  const b={};
+  ["servicio_km","servicio_fecha","verif_ultima","verif_vence","poliza_aseguradora","poliza_numero","poliza_vence","gps_imei"]
+    .forEach(c=>b[c]=document.getElementById("m-"+c).value.trim());
+  const r=await api.put("/api/unidades/"+EDIT_ID, b);
+  if(r.ok){ aviso("Ficha guardada ✅"); cerrarModal(); cargar(); }
+  else aviso(r.error||"No se pudo guardar");
+}
+
+// ---- Registrar servicio de hoy ----
+async function registrarServicio(id,nombre,ultimoKm){
+  const km=prompt("🔧 Servicio de "+nombre+"\n¿Con cuántos km se hizo el servicio?", ultimoKm!==null?ultimoKm:"");
+  if(km===null) return;
+  if(!km.trim()||isNaN(parseFloat(km))){ aviso("Escribe un número de kilómetros"); return; }
+  const r=await api.put("/api/unidades/"+id,{servicio_km:km.trim(),servicio_fecha:fechaHoy()});
+  if(r.ok){ aviso("Servicio registrado ✅ El próximo será a los "+ (parseFloat(km)+10000).toLocaleString() +" km"); cargar(); }
+  else aviso(r.error||"Error");
+}
+
+// ---- Documentos de póliza ----
+async function subirDoc(unidadId, files){
+  for(const file of files){
+    aviso("Subiendo…");
+    const esPDF=/\.pdf$/i.test(file.name)||file.type==="application/pdf";
+    const cuerpo=esPDF?file:await comprimirImagen(file);
+    const nombre=esPDF?file.name:file.name.replace(/\.[^.]+$/,".jpg");
+    const r=await fetch("/api/unidad/"+unidadId+"/foto?categoria=poliza&nombre="+encodeURIComponent(nombre),{method:"POST",body:cuerpo});
+    const j=await r.json();
+    if(j.error){ aviso(j.error); return; }
+  }
+  aviso("Documento guardado ✅");
+  cargar();
+}
+async function borrarDoc(id){
+  if(!confirm("¿Eliminar este documento?")) return;
+  await api.del("/api/foto/"+id);
+  cargar();
+}
+
+inicio();
+</script>
+</body>
+</html>

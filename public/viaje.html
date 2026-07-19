@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salida de unidad — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" onclick="location.href='index.html'">← Volver</button>
+</div>
+
+<div class="contenedor" id="cont" style="display:none">
+  <div class="seccion-tit">
+    <h2 id="titulo">Nueva salida</h2>
+    <span class="chip" id="chip-estado" style="display:none"></span>
+    <div style="flex:1"></div>
+    <button class="btn fantasma chico" id="btn-resumen" style="display:none">📊 Resumen</button>
+    <button class="btn fantasma chico" id="btn-pdf" style="display:none">🖨️ PDF</button>
+    <button class="btn peligro chico" id="btn-borrar" style="display:none">🗑️ Eliminar</button>
+  </div>
+
+  <!-- ============ SECCIÓN 1: DATOS DE LA SALIDA ============ -->
+  <div class="cabecera">
+    <h3>📋 Datos de la salida</h3>
+    <div class="campos">
+      <div class="campo ancho">
+        <label>Descripción de actividad a realizar</label>
+        <textarea id="f-descripcion" rows="2" placeholder="¿Qué actividad va a realizar la unidad?"></textarea>
+      </div>
+      <div class="campo">
+        <label>Solicitante</label>
+        <input id="f-solicitante" placeholder="Nombre del solicitante">
+      </div>
+      <div class="campo">
+        <label>Fecha de salida</label>
+        <input id="f-fecha_salida" type="date">
+        <span class="nota" id="nota-fecha">La fecha es la de hoy. Solo el administrador puede cambiarla.</span>
+      </div>
+      <div class="campo">
+        <label>Hora de salida</label>
+        <input id="f-hora_salida" type="time">
+      </div>
+      <div class="campo">
+        <label>Fecha de regreso (estimada, si es más de 1 día)</label>
+        <input id="f-fecha_regreso" type="date">
+        <span class="nota">Déjala vacía si sale y regresa el mismo día.</span>
+      </div>
+      <div class="campo">
+        <label>Unidad</label>
+        <select id="f-unidad"></select>
+      </div>
+      <div class="campo">
+        <label>Operador</label>
+        <input id="f-operador" list="lista-operadores" placeholder="Nombre del operador">
+        <datalist id="lista-operadores"></datalist>
+      </div>
+    </div>
+
+    <div class="verif" id="caja-firma-sol">
+      <div class="rol">✍️ Firma del solicitante</div>
+      <div id="firma-solicitante"></div>
+    </div>
+    <div class="verif" id="caja-firma-op">
+      <div class="rol">✍️ Firma del operador</div>
+      <div id="firma-operador"></div>
+    </div>
+    <div class="verif">
+      <div class="rol">🔑 Entrega de llaves</div>
+      <div class="campos">
+        <div class="campo">
+          <label>¿Quién entrega las llaves?</label>
+          <input id="f-llaves_entrega_por" placeholder="Nombre de quien entrega">
+        </div>
+        <div class="campo">
+          <label>¿Quién recibe las llaves?</label>
+          <input id="f-llaves_recibe" placeholder="Normalmente el operador">
+        </div>
+      </div>
+      <div class="rol" style="margin-top:10px;font-size:.85rem">✍️ Firma de quien recibe las llaves</div>
+      <div id="firma-llaves-salida"></div>
+    </div>
+  </div>
+
+  <!-- ============ SECCIÓN 2: REGRESO ============ -->
+  <div class="cabecera" id="sec-regreso">
+    <h3>🏁 Registro del regreso <span class="nota" style="font-weight:400;text-transform:none;font-size:.8rem;color:var(--gris)">(lo llena el operador al volver)</span></h3>
+    <div class="campos">
+      <div class="campo">
+        <label>Fecha real de regreso</label>
+        <input id="f-fecha_regreso_real" type="date">
+      </div>
+      <div class="campo">
+        <label>Hora de regreso</label>
+        <div style="display:flex;gap:8px">
+          <input id="f-hora_regreso" type="time" style="flex:1">
+          <button class="btn chico" id="btn-hora-ahora" title="Poner la hora actual">🕐 Ahora</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label>¿Quién recibe la carga? (si trae)</label>
+        <input id="f-recibe_carga" placeholder="Nombre de quien recibe la carga">
+      </div>
+      <div class="campo ancho">
+        <label>Observaciones</label>
+        <textarea id="f-observaciones" rows="2" placeholder="Incidencias, combustible, comentarios… (opcional)"></textarea>
+      </div>
+    </div>
+    <div class="verif">
+      <div class="rol">✍️ Firma de quien recibe la carga</div>
+      <div id="firma-recibe"></div>
+    </div>
+    <div class="verif">
+      <div class="rol">🔑 Retorno de llaves</div>
+      <div class="campos">
+        <div class="campo">
+          <label>¿A quién se devuelven las llaves?</label>
+          <input id="f-llaves_devuelve_a" placeholder="Nombre de quien recibe las llaves de vuelta">
+        </div>
+      </div>
+      <div class="rol" style="margin-top:10px;font-size:.85rem">✍️ Firma de quien recibe las llaves al regreso</div>
+      <div id="firma-llaves-regreso"></div>
+    </div>
+  </div>
+
+  <!-- ============ SECCIÓN 3: EVIDENCIAS ============ -->
+  <div class="cabecera" id="sec-fotos" style="display:none">
+    <h3>📷 Evidencias (fotos)</h3>
+    <div class="fotos-grid" id="fotos"></div>
+  </div>
+
+  <div class="pie-acciones">
+    <span class="guardado" id="guardado"></span>
+    <button class="btn primario" id="btn-guardar">💾 Guardar</button>
+    <button class="btn verde" id="btn-finalizar" style="display:none">✅ Finalizar viaje</button>
+  </div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let YO=null, ID=paramURL("id"), VIAJE=null;
+const FIRMAS={}; // { solicitante:{pad,valor,quien,cuando}, operador:{...}, recibe:{...} }
+
+const puedeSalida = () => YO.rol_app==="admin" || YO.rol_app==="supervisor";
+const esAdmin = () => YO.rol_app==="admin";
+
+async function inicio(){
+  YO = await exigirSesion(); if(!YO) return;
+  // unidades y operadores para los selects
+  const [unidades, operadores] = await Promise.all([api.get("/api/unidades"), api.get("/api/operadores")]);
+  document.getElementById("f-unidad").innerHTML =
+    `<option value="">— Elige unidad —</option>` +
+    unidades.map(u=>`<option value="${escaparHTML(u.nombre)}">${escaparHTML(u.nombre)}</option>`).join("");
+  document.getElementById("lista-operadores").innerHTML =
+    operadores.map(o=>`<option value="${escaparHTML(o.nombre)}">`).join("");
+
+  if(ID){
+    VIAJE = await api.get("/api/viaje/"+ID);
+    if(VIAJE.error){ aviso(VIAJE.error); setTimeout(()=>location.href="index.html",1200); return; }
+    // si la unidad del registro ya no está activa, agregarla al select para no perderla
+    if(VIAJE.unidad && ![...document.getElementById("f-unidad").options].some(o=>o.value===VIAJE.unidad)){
+      document.getElementById("f-unidad").insertAdjacentHTML("beforeend",`<option value="${escaparHTML(VIAJE.unidad)}">${escaparHTML(VIAJE.unidad)}</option>`);
+    }
+  } else {
+    if(!puedeSalida()){ aviso("Solo el coordinador registra salidas"); setTimeout(()=>location.href="index.html",1200); return; }
+  }
+  pintar();
+  document.getElementById("cont").style.display="block";
+}
+
+function pintar(){
+  const v = VIAJE || {};
+  document.getElementById("titulo").textContent = ID ? ("Salida " + (v.folio||"")) : "Nueva salida";
+  if(ID){
+    const ch=document.getElementById("chip-estado");
+    ch.style.display="inline-block";
+    ch.className = "chip " + (v.estado==="finalizado"?"finalizado":"encurso");
+    ch.textContent = v.estado==="finalizado" ? "✅ Finalizada" : "🟡 En curso";
+    document.getElementById("btn-pdf").style.display="inline-flex";
+    document.getElementById("btn-pdf").onclick=()=>window.open("imprimir.html?id="+ID,"_blank");
+    document.getElementById("btn-resumen").style.display="inline-flex";
+    document.getElementById("btn-resumen").onclick=()=>location.href="resumen.html?id="+ID;
+    if(esAdmin()){
+      const bb=document.getElementById("btn-borrar");
+      bb.style.display="inline-flex";
+      bb.onclick=borrar;
+    }
+    document.getElementById("sec-fotos").style.display="block";
+    pintarFotos();
+  }
+
+  // ---- valores ----
+  pon("f-descripcion", v.descripcion);
+  pon("f-solicitante", v.solicitante ?? (puedeSalida()?YO.nombre:""));
+  pon("f-fecha_salida", v.fecha_salida || fechaHoy());
+  pon("f-hora_salida", v.hora_salida ?? horaAhora());
+  pon("f-fecha_regreso", v.fecha_regreso);
+  pon("f-unidad", v.unidad);
+  pon("f-operador", v.operador);
+  pon("f-llaves_entrega_por", v.llaves_entrega_por ?? (puedeSalida()?YO.nombre:""));
+  pon("f-llaves_recibe", v.llaves_recibe);
+  pon("f-fecha_regreso_real", v.fecha_regreso_real);
+  pon("f-hora_regreso", v.hora_regreso);
+  pon("f-recibe_carga", v.recibe_carga);
+  pon("f-llaves_devuelve_a", v.llaves_devuelve_a);
+  pon("f-observaciones", v.observaciones);
+
+  // ---- permisos ----
+  // Fecha de salida: solo administrador
+  document.getElementById("f-fecha_salida").disabled = !esAdmin();
+  if(esAdmin()) document.getElementById("nota-fecha").textContent="Como administrador puedes ajustar la fecha.";
+  // Datos de salida: solo supervisor/admin
+  ["f-descripcion","f-solicitante","f-hora_salida","f-fecha_regreso","f-unidad","f-operador","f-llaves_entrega_por","f-llaves_recibe"].forEach(id=>{
+    document.getElementById(id).disabled = !puedeSalida();
+  });
+
+  // Si el campo "quién recibe las llaves" está vacío, se llena solo con el operador
+  const inOp=document.getElementById("f-operador"), inLlR=document.getElementById("f-llaves_recibe");
+  inOp.addEventListener("input",()=>{ if(!inLlR.dataset.tocado) inLlR.value=inOp.value; });
+  inLlR.addEventListener("input",()=>{ inLlR.dataset.tocado="1"; });
+  if(v.llaves_recibe) inLlR.dataset.tocado="1";
+
+  // ---- firmas ----
+  montarFirma("firma-solicitante","solicitante", v.firma_solicitante, puedeSalida());
+  montarFirma("firma-operador","operador", v.firma_operador, true);
+  montarFirma("firma-llaves-salida","llaves_salida", v.firma_llaves_salida, puedeSalida());
+  montarFirma("firma-recibe","recibe", v.firma_recibe, true);
+  montarFirma("firma-llaves-regreso","llaves_regreso", v.firma_llaves_regreso, true);
+
+  // ---- botones ----
+  const bf=document.getElementById("btn-finalizar");
+  bf.style.display = (ID && v.estado!=="finalizado") ? "inline-flex" : "none";
+  bf.onclick=finalizar;
+  document.getElementById("btn-guardar").onclick=guardar;
+  document.getElementById("btn-hora-ahora").onclick=(e)=>{e.preventDefault();
+    document.getElementById("f-hora_regreso").value=horaAhora();
+    if(!document.getElementById("f-fecha_regreso_real").value) document.getElementById("f-fecha_regreso_real").value=fechaHoy();
+  };
+}
+
+function pon(id,valor){ document.getElementById(id).value = valor || ""; }
+function val(id){ return document.getElementById(id).value.trim(); }
+
+// ---- Firmas: si ya hay firma muestra la imagen; si no, canvas para firmar ----
+function montarFirma(contId, clave, dataURL, puedeFirmar){
+  const cont=document.getElementById(contId);
+  FIRMAS[clave] = FIRMAS[clave] || {};
+  FIRMAS[clave].valor = dataURL || "";
+  if(dataURL){
+    cont.innerHTML=`<div class="firma-zona">
+      <img class="firma-img" src="${dataURL}">
+      <div class="firma-acc">
+        <span class="firmado-por">✓ Firmado</span>
+        ${puedeFirmar?`<button class="btn chico fantasma" onclick="reFirmar('${contId}','${clave}')">✏️ Volver a firmar</button>`:""}
+      </div></div>`;
+    FIRMAS[clave].pad=null;
+    return;
+  }
+  if(!puedeFirmar){ cont.innerHTML=`<span class="nota" style="color:var(--gris);font-size:.85rem">Pendiente de firma.</span>`; return; }
+  cont.innerHTML=`<div class="firma-zona">
+    <div class="firma-caja"><canvas></canvas><div class="ph">Firma aquí con el dedo o el mouse</div></div>
+    <div class="firma-acc"><button class="btn chico fantasma" data-limpiar>🧽 Limpiar</button></div>
+  </div>`;
+  const pad=crearFirma(cont.querySelector(".firma-caja"));
+  cont.querySelector("[data-limpiar]").onclick=(e)=>{e.preventDefault();pad.limpiar();};
+  FIRMAS[clave].pad=pad;
+}
+function reFirmar(contId, clave){ FIRMAS[clave].valor=""; montarFirma(contId, clave, "", true); }
+
+function recogerFirma(clave){
+  const f=FIRMAS[clave];
+  if(f.pad && !f.pad.estaVacio()) return f.pad.aDataURL();
+  return f.valor || "";
+}
+
+// ---- Guardar ----
+function datosFormulario(){
+  return {
+    descripcion: val("f-descripcion"),
+    solicitante: val("f-solicitante"),
+    firma_solicitante: recogerFirma("solicitante"),
+    fecha_salida: val("f-fecha_salida"),
+    hora_salida: val("f-hora_salida"),
+    fecha_regreso: val("f-fecha_regreso"),
+    unidad: val("f-unidad"),
+    operador: val("f-operador"),
+    firma_operador: recogerFirma("operador"),
+    llaves_entrega_por: val("f-llaves_entrega_por"),
+    llaves_recibe: val("f-llaves_recibe"),
+    firma_llaves_salida: recogerFirma("llaves_salida"),
+    fecha_regreso_real: val("f-fecha_regreso_real"),
+    hora_regreso: val("f-hora_regreso"),
+    recibe_carga: val("f-recibe_carga"),
+    firma_recibe: recogerFirma("recibe"),
+    llaves_devuelve_a: val("f-llaves_devuelve_a"),
+    firma_llaves_regreso: recogerFirma("llaves_regreso"),
+    observaciones: val("f-observaciones"),
+  };
+}
+
+async function guardar(){
+  const d=datosFormulario();
+  if(!ID){
+    if(!d.descripcion){ aviso("Escribe la descripción de la actividad"); return; }
+    if(!d.unidad){ aviso("Elige la unidad"); return; }
+    if(!d.operador){ aviso("Escribe el nombre del operador"); return; }
+    const r=await api.post("/api/viajes", d);
+    if(r.id){ aviso("Salida registrada ✅"); location.href="viaje.html?id="+r.id; }
+    else aviso(r.error||"No se pudo guardar");
+    return;
+  }
+  const r=await api.put("/api/viaje/"+ID, d);
+  if(r.ok){
+    document.getElementById("guardado").textContent="Guardado ✓ "+horaAhora();
+    aviso("Guardado ✅");
+    VIAJE = await api.get("/api/viaje/"+ID);
+    pintar();
+  } else aviso(r.error||"No se pudo guardar");
+}
+
+async function finalizar(){
+  const d=datosFormulario();
+  if(!d.hora_regreso){ aviso("Registra la hora de regreso antes de finalizar"); return; }
+  if(!d.fecha_regreso_real) d.fecha_regreso_real=fechaHoy();
+  d.estado="finalizado";
+  const r=await api.put("/api/viaje/"+ID, d);
+  if(r.ok){ aviso("Viaje finalizado ✅ Generando resumen…"); location.href="resumen.html?id="+ID; }
+  else aviso(r.error||"No se pudo finalizar");
+}
+
+async function borrar(){
+  if(!confirm("¿Eliminar este registro por completo? Esta acción no se puede deshacer.")) return;
+  const r=await api.del("/api/viaje/"+ID);
+  if(r.ok){ location.href="index.html"; } else aviso(r.error||"No se pudo eliminar");
+}
+
+// ---- Fotos ----
+function pintarFotos(){
+  const cont=document.getElementById("fotos");
+  const fotos=(VIAJE&&VIAJE.fotos)||[];
+  cont.innerHTML = fotos.map(f=>`
+    <div class="foto-item">
+      <img src="${f.url}" onclick="window.open('${f.url}','_blank')" style="cursor:zoom-in">
+      <button onclick="borrarFoto('${f.id}')" title="Eliminar foto">×</button>
+    </div>`).join("") + `
+    <label class="foto-add">📷<span>Agregar foto</span>
+      <input type="file" accept="image/*" capture="environment" multiple onchange="subirFotos(this.files)">
+    </label>`;
+}
+async function subirFotos(files){
+  for(const file of files){
+    aviso("Subiendo foto…");
+    const blob=await comprimirImagen(file);
+    const r=await fetch("/api/viaje/"+ID+"/foto?nombre="+encodeURIComponent(file.name.replace(/\.[^.]+$/,".jpg")),{method:"POST",body:blob});
+    const j=await r.json();
+    if(j.error){ aviso(j.error); return; }
+  }
+  aviso("Fotos guardadas ✅");
+  VIAJE=await api.get("/api/viaje/"+ID);
+  pintarFotos();
+}
+async function borrarFoto(fid){
+  if(!confirm("¿Eliminar esta foto?")) return;
+  await api.del("/api/foto/"+fid);
+  VIAJE=await api.get("/api/viaje/"+ID);
+  pintarFotos();
+}
+
+inicio();
+</script>
+</body>
+</html>

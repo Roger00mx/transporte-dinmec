@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control de Transporte — DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="apple-touch-icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+<style>
+  .filtros{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .filtros input[type=search]{flex:1;min-width:180px;border:1.5px solid var(--linea);border-radius:9px;padding:10px 13px;font-size:.95rem;font-family:inherit}
+  .menu-usuario{position:absolute;right:14px;top:52px;background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.2);border:1px solid var(--linea);overflow:hidden;z-index:40;min-width:230px}
+  .menu-usuario button{display:block;width:100%;text-align:left;border:none;background:none;padding:12px 16px;font-size:.92rem;cursor:pointer;font-family:inherit}
+  .menu-usuario button:hover{background:var(--gris-claro)}
+  .menu-usuario .quien{padding:12px 16px;border-bottom:1px solid var(--linea);font-size:.85rem;color:var(--gris)}
+  .menu-usuario .quien b{display:block;color:var(--texto);font-size:.95rem}
+</style>
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <span class="envivo" id="envivo" style="display:none"><i></i> en vivo</span>
+  <div class="crece"></div>
+  <div class="usuario" id="chip-usuario">…</div>
+</div>
+<div id="menu" style="display:none" class="menu-usuario"></div>
+
+<div class="contenedor">
+  <div class="nav-sec">
+    <a class="activa" href="index.html">🚚 Salidas</a>
+    <a href="gasolina.html">⛽ Gasolina</a>
+    <a href="incidentes.html">⚠️ Incidentes</a>
+    <a href="flota.html">🚛 Flota</a>
+    <a href="gps.html">📍 GPS</a>
+  </div>
+  <div class="seccion-tit">
+    <h2>Salidas de unidades</h2>
+    <div class="crece" style="flex:1"></div>
+    <button class="btn fantasma chico" data-instalar style="display:none" onclick="instalarApp()">📲 Instalar app</button>
+    <button class="btn fantasma chico" onclick="location.href='imprimir.html'">🖨️ Bitácora / PDF</button>
+    <button class="btn primario" id="btn-nueva" style="display:none" onclick="location.href='viaje.html'">➕ Nueva salida</button>
+  </div>
+
+  <div class="pestanas">
+    <div class="pestana activa" data-tab="en_curso" onclick="cambiarTab('en_curso')">🟡 En curso</div>
+    <div class="pestana" data-tab="finalizado" onclick="cambiarTab('finalizado')">✅ Finalizadas</div>
+    <div class="pestana" data-tab="todas" onclick="cambiarTab('todas')">📋 Todas</div>
+  </div>
+
+  <div class="filtros">
+    <input type="search" id="buscar" placeholder="Buscar por folio, operador, unidad, actividad…" oninput="pintar()">
+  </div>
+
+  <div class="grid" id="lista"></div>
+  <div class="vacio" id="vacio" style="display:none"></div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let YO=null, VIAJES=[], TAB="en_curso";
+
+async function inicio(){
+  YO = await exigirSesion(); if(!YO) return;
+  document.getElementById("chip-usuario").textContent = "👤 " + YO.nombre;
+  document.getElementById("chip-usuario").onclick = menuUsuario;
+  // Solo supervisor o admin pueden registrar salidas
+  if(YO.rol_app==="admin"||YO.rol_app==="supervisor") document.getElementById("btn-nueva").style.display="inline-flex";
+  await cargar();
+  const ev = conectarEnVivo(()=>cargar());
+  if(ev) document.getElementById("envivo").style.display="inline-flex";
+}
+
+async function cargar(){
+  VIAJES = await api.get("/api/viajes");
+  pintar();
+}
+
+function cambiarTab(t){
+  TAB=t;
+  document.querySelectorAll(".pestana").forEach(p=>p.classList.toggle("activa",p.dataset.tab===t));
+  pintar();
+}
+
+function pintar(){
+  const q=(document.getElementById("buscar").value||"").toLowerCase();
+  let lista=VIAJES;
+  if(TAB!=="todas") lista=lista.filter(v=>v.estado===TAB);
+  if(q) lista=lista.filter(v=>((v.folio||"")+" "+(v.operador||"")+" "+(v.unidad||"")+" "+(v.descripcion||"")+" "+(v.solicitante||"")).toLowerCase().includes(q));
+  const cont=document.getElementById("lista"), vacio=document.getElementById("vacio");
+  if(!lista.length){
+    cont.innerHTML="";
+    vacio.style.display="block";
+    vacio.innerHTML = TAB==="en_curso"
+      ? "No hay unidades fuera en este momento.<br><br>" + ((YO.rol_app!=="operador")?"Toca <b>➕ Nueva salida</b> para registrar una.":"El coordinador registra las salidas; aquí verás las que estén en curso.")
+      : "No hay registros aquí todavía.";
+    return;
+  }
+  vacio.style.display="none";
+  cont.innerHTML=lista.map(v=>`
+    <div class="tarjeta" onclick="location.href='viaje.html?id=${v.id}'">
+      <div class="cli">${escaparHTML(v.folio||"")}
+        <span class="chip ${v.estado==="finalizado"?"finalizado":"encurso"}">${v.estado==="finalizado"?"✅ Finalizada":"🟡 En curso"}</span>
+      </div>
+      <div class="desc">${escaparHTML(v.descripcion||"(sin descripción)")}</div>
+      <div class="meta">🚚 ${escaparHTML(v.unidad||"—")} · 👷 ${escaparHTML(v.operador||"sin operador")}</div>
+      <div class="meta">📅 Salida: ${fechaBonita(v.fecha_salida)} ${v.hora_salida?("· "+v.hora_salida):""}
+        ${v.hora_regreso?("&nbsp;→&nbsp; Regreso: "+fechaBonita(v.fecha_regreso_real||v.fecha_salida)+" · "+v.hora_regreso):""}</div>
+      <div class="chips">
+        <span class="chip">Solicitó: ${escaparHTML(v.solicitante||"—")}</span>
+        ${v.recibe_carga?`<span class="chip">Recibe carga: ${escaparHTML(v.recibe_carga)}</span>`:""}
+      </div>
+    </div>`).join("");
+}
+
+function menuUsuario(){
+  const m=document.getElementById("menu");
+  if(m.style.display==="block"){ m.style.display="none"; return; }
+  const esAdmin = YO.rol_app==="admin";
+  m.innerHTML=`
+    <div class="quien"><b>${escaparHTML(YO.nombre)}</b>${escaparHTML(YO.rol||rolBonito(YO.rol_app))} · ${rolBonito(YO.rol_app)}</div>
+    ${esAdmin?`<button onclick="location.href='usuarios.html'">👥 Usuarios y unidades</button>`:""}
+    ${esAdmin?`<button onclick="location.href='/api/respaldo'">💾 Descargar respaldo</button>`:""}
+    <button data-instalar onclick="instalarApp()">📲 Instalar como app</button>
+    <button onclick="cerrarSesion()" style="color:#d23f3f">🚪 Cerrar sesión</button>`;
+  m.style.display="block";
+  setTimeout(()=>document.addEventListener("click",cerrarMenu,{once:true}),0);
+}
+function cerrarMenu(e){
+  const m=document.getElementById("menu");
+  if(!m.contains(e.target) && e.target.id!=="chip-usuario") m.style.display="none";
+}
+function rolBonito(r){ return r==="admin"?"Administrador":r==="supervisor"?"Coordinador":"Operador"; }
+
+inicio();
+</script>
+</body>
+</html>

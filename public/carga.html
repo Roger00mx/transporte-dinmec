@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carga de gasolina — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" onclick="location.href='gasolina.html'">← Volver</button>
+</div>
+
+<div class="contenedor" id="cont" style="display:none">
+  <div class="seccion-tit">
+    <h2 id="titulo">⛽ Nueva carga de gasolina</h2>
+    <div style="flex:1"></div>
+    <button class="btn peligro chico" id="btn-borrar" style="display:none">🗑️ Eliminar</button>
+  </div>
+
+  <div class="cabecera">
+    <h3>📋 Datos de la carga</h3>
+    <div class="campos">
+      <div class="campo">
+        <label>Fecha</label>
+        <input id="f-fecha" type="date">
+      </div>
+      <div class="campo">
+        <label>Hora</label>
+        <div style="display:flex;gap:8px">
+          <input id="f-hora" type="time" style="flex:1">
+          <button class="btn chico" id="btn-ahora" title="Poner la hora actual">🕐 Ahora</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label>Unidad</label>
+        <select id="f-unidad"></select>
+      </div>
+      <div class="campo">
+        <label>¿Dónde se realiza la carga?</label>
+        <input id="f-lugar" placeholder="Ej. Gasolinera Pemex Av. Juárez">
+      </div>
+      <div class="campo">
+        <label>Tipo de pago</label>
+        <select id="f-tipo_pago">
+          <option value="">— Elige —</option>
+          <option value="efectivo">💵 Efectivo</option>
+          <option value="tarjeta">💳 Tarjeta</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Kilometraje de la unidad (km)</label>
+        <input id="f-kilometraje" type="number" inputmode="numeric" min="0" placeholder="Ej. 45230">
+        <span class="nota" id="nota-km">Anota los km del tablero y toma la foto del tablero abajo.</span>
+      </div>
+      <div class="campo">
+        <label>Nivel de combustible (después de cargar)</label>
+        <select id="f-nivel_combustible">
+          <option value="">— Elige —</option>
+          <option value="reserva">🔴 Reserva</option>
+          <option value="1/4">¼ de tanque</option>
+          <option value="1/2">½ tanque</option>
+          <option value="3/4">¾ de tanque</option>
+          <option value="lleno">🟢 Tanque lleno</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Operador</label>
+        <input id="f-operador" placeholder="Nombre del operador">
+      </div>
+      <div class="campo ancho">
+        <label>Observaciones (opcional)</label>
+        <textarea id="f-observaciones" rows="2" placeholder="Litros, monto, comentarios…"></textarea>
+      </div>
+    </div>
+
+    <div class="verif">
+      <div class="rol">📷 Fotos de la carga</div>
+      <p class="nota" style="color:var(--gris);font-size:.85rem;margin:2px 0 0">Toma las 3 fotos aquí mismo: el tablero donde se vea el kilometraje y el nivel de combustible, la bomba y el ticket. Se guardan junto con la carga.</p>
+      <div id="grupos-fotos"></div>
+    </div>
+
+    <div class="verif">
+      <div class="rol">✍️ Firma del operador</div>
+      <div id="firma-operador"></div>
+    </div>
+  </div>
+
+  <div class="pie-acciones">
+    <span class="guardado" id="guardado"></span>
+    <button class="btn primario" id="btn-guardar">💾 Guardar</button>
+  </div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let YO=null, ID=paramURL("id"), CARGA=null;
+const FIRMAS={};
+const CATEGORIAS=[
+  {clave:"kilometraje", titulo:"🛣️ Tablero (kilometraje y nivel de combustible)"},
+  {clave:"bomba", titulo:"⛽ Bomba donde se hace la carga"},
+  {clave:"ticket", titulo:"🧾 Ticket"},
+];
+// Fotos elegidas antes de guardar (carga nueva): se suben solas al guardar
+const PENDIENTES={kilometraje:[], bomba:[], ticket:[]};
+
+let FLOTA=[];
+async function inicio(){
+  YO = await exigirSesion(); if(!YO) return;
+  const unidades = await api.get("/api/unidades");
+  FLOTA = await api.get("/api/flota").catch(()=>[]);
+  document.getElementById("f-unidad").innerHTML =
+    `<option value="">— Elige unidad —</option>` +
+    unidades.map(u=>`<option value="${escaparHTML(u.nombre)}">${escaparHTML(u.nombre)}</option>`).join("");
+  document.getElementById("f-unidad").addEventListener("change", pistaKm);
+  if(ID){
+    CARGA = await api.get("/api/carga/"+ID);
+    if(CARGA.error){ aviso(CARGA.error); setTimeout(()=>location.href="gasolina.html",1200); return; }
+    if(CARGA.unidad && ![...document.getElementById("f-unidad").options].some(o=>o.value===CARGA.unidad)){
+      document.getElementById("f-unidad").insertAdjacentHTML("beforeend",`<option value="${escaparHTML(CARGA.unidad)}">${escaparHTML(CARGA.unidad)}</option>`);
+    }
+  }
+  pintar();
+  document.getElementById("cont").style.display="block";
+}
+
+function pintar(){
+  const c = CARGA || {};
+  document.getElementById("titulo").textContent = ID ? "⛽ Carga de gasolina" : "⛽ Nueva carga de gasolina";
+  pon("f-fecha", c.fecha || fechaHoy());
+  pon("f-hora", c.hora ?? horaAhora());
+  pon("f-unidad", c.unidad);
+  pon("f-lugar", c.lugar);
+  pon("f-tipo_pago", c.tipo_pago);
+  pon("f-kilometraje", c.kilometraje);
+  pon("f-nivel_combustible", c.nivel_combustible);
+  pon("f-operador", c.operador ?? YO.nombre);
+  pistaKm();
+  pon("f-observaciones", c.observaciones);
+  montarFirma("firma-operador","operador", c.firma_operador, true);
+  document.getElementById("btn-guardar").onclick=guardar;
+  document.getElementById("btn-ahora").onclick=(e)=>{e.preventDefault();document.getElementById("f-hora").value=horaAhora();};
+  pintarFotos();
+  if(ID && YO.rol_app==="admin"){
+    const bb=document.getElementById("btn-borrar");
+    bb.style.display="inline-flex";
+    bb.onclick=borrar;
+  }
+}
+
+function pon(id,valor){ document.getElementById(id).value = valor || ""; }
+function val(id){ return document.getElementById(id).value.trim(); }
+
+// Muestra la última lectura conocida de la unidad elegida (para no equivocarse)
+function pistaKm(){
+  const nombre=document.getElementById("f-unidad").value;
+  const u=FLOTA.find(f=>f.nombre===nombre);
+  const nota=document.getElementById("nota-km");
+  if(u && u.ultimo_km!==null){
+    nota.textContent="Última lectura registrada: "+Number(u.ultimo_km).toLocaleString()+" km ("+fechaBonita(u.ultimo_km_fecha)+"). El nuevo valor debe ser mayor.";
+  } else {
+    nota.textContent="Anota los km del tablero y toma la foto del kilometraje abajo.";
+  }
+}
+
+function montarFirma(contId, clave, dataURL, puedeFirmar){
+  const cont=document.getElementById(contId);
+  FIRMAS[clave] = FIRMAS[clave] || {};
+  FIRMAS[clave].valor = dataURL || "";
+  if(dataURL){
+    cont.innerHTML=`<div class="firma-zona">
+      <img class="firma-img" src="${dataURL}">
+      <div class="firma-acc">
+        <span class="firmado-por">✓ Firmado</span>
+        <button class="btn chico fantasma" onclick="reFirmar('${contId}','${clave}')">✏️ Volver a firmar</button>
+      </div></div>`;
+    FIRMAS[clave].pad=null;
+    return;
+  }
+  cont.innerHTML=`<div class="firma-zona">
+    <div class="firma-caja"><canvas></canvas><div class="ph">Firma aquí con el dedo o el mouse</div></div>
+    <div class="firma-acc"><button class="btn chico fantasma" data-limpiar>🧽 Limpiar</button></div>
+  </div>`;
+  const pad=crearFirma(cont.querySelector(".firma-caja"));
+  cont.querySelector("[data-limpiar]").onclick=(e)=>{e.preventDefault();pad.limpiar();};
+  FIRMAS[clave].pad=pad;
+}
+function reFirmar(contId, clave){ FIRMAS[clave].valor=""; montarFirma(contId, clave, "", true); }
+function recogerFirma(clave){
+  const f=FIRMAS[clave];
+  if(f.pad && !f.pad.estaVacio()) return f.pad.aDataURL();
+  return f.valor || "";
+}
+
+function datosFormulario(){
+  return {
+    fecha: val("f-fecha"), hora: val("f-hora"), unidad: val("f-unidad"),
+    lugar: val("f-lugar"), tipo_pago: val("f-tipo_pago"),
+    kilometraje: val("f-kilometraje"),
+    nivel_combustible: val("f-nivel_combustible"),
+    operador: val("f-operador"), firma_operador: recogerFirma("operador"),
+    observaciones: val("f-observaciones"),
+  };
+}
+
+async function guardar(){
+  const d=datosFormulario();
+  if(!d.unidad){ aviso("Elige la unidad"); return; }
+  if(!d.lugar){ aviso("Escribe dónde se hizo la carga"); return; }
+  if(!d.tipo_pago){ aviso("Elige el tipo de pago"); return; }
+  if(!d.kilometraje){ aviso("Anota el kilometraje de la unidad"); return; }
+  const u=FLOTA.find(f=>f.nombre===d.unidad);
+  if(u && u.ultimo_km!==null && parseFloat(d.kilometraje) < u.ultimo_km && !ID){
+    if(!confirm("El kilometraje ("+d.kilometraje+") es MENOR a la última lectura ("+u.ultimo_km+" km). ¿Seguro que es correcto?")) return;
+  }
+  if(!ID){
+    if(!PENDIENTES.kilometraje.length){
+      if(!confirm("No agregaste la foto del tablero con el kilometraje. ¿Guardar de todos modos?")) return;
+    }
+    const r=await api.post("/api/cargas", d);
+    if(r.id){
+      aviso("Guardando fotos…");
+      await subirPendientes(r.id);
+      aviso("Carga registrada ✅");
+      location.href="carga.html?id="+r.id;
+    }
+    else aviso(r.error||"No se pudo guardar");
+    return;
+  }
+  const r=await api.put("/api/carga/"+ID, d);
+  if(r.ok){
+    document.getElementById("guardado").textContent="Guardado ✓ "+horaAhora();
+    aviso("Guardado ✅");
+    CARGA = await api.get("/api/carga/"+ID);
+    pintar();
+  } else aviso(r.error||"No se pudo guardar");
+}
+
+async function borrar(){
+  if(!confirm("¿Eliminar este registro de carga por completo?")) return;
+  const r=await api.del("/api/carga/"+ID);
+  if(r.ok){ location.href="gasolina.html"; } else aviso(r.error||"No se pudo eliminar");
+}
+
+// ---- Fotos por categoría (con vista previa antes de guardar) ----
+function pintarFotos(){
+  const fotos=(CARGA&&CARGA.fotos)||[];
+  document.getElementById("grupos-fotos").innerHTML = CATEGORIAS.map(cat=>{
+    const propias=fotos.filter(f=>f.categoria===cat.clave);
+    const espera=PENDIENTES[cat.clave];
+    const tiene=propias.length||espera.length;
+    return `<div class="bloque" style="margin-top:14px">
+      <div class="rol" style="font-weight:700;color:var(--azul);font-size:.9rem">${cat.titulo} ${tiene?"✅":""}</div>
+      <div class="fotos-grid">
+        ${propias.map(f=>`
+          <div class="foto-item">
+            <img src="${f.url}" onclick="window.open('${f.url}','_blank')" style="cursor:zoom-in">
+            <button onclick="borrarFoto('${f.id}')" title="Eliminar foto">×</button>
+          </div>`).join("")}
+        ${espera.map((p,i)=>`
+          <div class="foto-item">
+            <img src="${p.url}" title="Se subirá al guardar">
+            <button onclick="quitarPendiente('${cat.clave}',${i})" title="Quitar">×</button>
+          </div>`).join("")}
+        <label class="foto-add">📷<span>Agregar</span>
+          <input type="file" accept="image/*" capture="environment" onchange="subirFoto(this.files,'${cat.clave}')">
+        </label>
+      </div>
+    </div>`;
+  }).join("");
+}
+async function subirFoto(files, categoria){
+  if(!ID){
+    // carga nueva: se quedan en espera con vista previa y se suben al guardar
+    for(const file of files) PENDIENTES[categoria].push({file, url:URL.createObjectURL(file)});
+    pintarFotos();
+    return;
+  }
+  for(const file of files){
+    aviso("Subiendo foto…");
+    const blob=await comprimirImagen(file);
+    const r=await fetch("/api/carga/"+ID+"/foto?categoria="+categoria+"&nombre="+encodeURIComponent(file.name.replace(/\.[^.]+$/,".jpg")),{method:"POST",body:blob});
+    const j=await r.json();
+    if(j.error){ aviso(j.error); return; }
+  }
+  aviso("Foto guardada ✅");
+  CARGA=await api.get("/api/carga/"+ID);
+  pintarFotos();
+}
+function quitarPendiente(cat,i){
+  URL.revokeObjectURL(PENDIENTES[cat][i].url);
+  PENDIENTES[cat].splice(i,1);
+  pintarFotos();
+}
+async function subirPendientes(id){
+  for(const cat of Object.keys(PENDIENTES)){
+    for(const p of PENDIENTES[cat]){
+      const blob=await comprimirImagen(p.file);
+      await fetch("/api/carga/"+id+"/foto?categoria="+cat+"&nombre="+encodeURIComponent(p.file.name.replace(/\.[^.]+$/,".jpg")),{method:"POST",body:blob});
+    }
+  }
+}
+async function borrarFoto(fid){
+  if(!confirm("¿Eliminar esta foto?")) return;
+  await api.del("/api/foto/"+fid);
+  CARGA=await api.get("/api/carga/"+ID);
+  pintarFotos();
+}
+
+inicio();
+</script>
+</body>
+</html>

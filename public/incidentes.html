@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Incidentes — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <span class="envivo" id="envivo" style="display:none"><i></i> en vivo</span>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" onclick="location.href='index.html'">← Inicio</button>
+</div>
+
+<div class="contenedor">
+  <div class="nav-sec">
+    <a href="index.html">🚚 Salidas</a>
+    <a href="gasolina.html">⛽ Gasolina</a>
+    <a class="activa" href="incidentes.html">⚠️ Incidentes</a>
+    <a href="flota.html">🚛 Flota</a>
+    <a href="gps.html">📍 GPS</a>
+  </div>
+  <div class="seccion-tit">
+    <h2>Incidentes y percances</h2>
+    <div style="flex:1"></div>
+    <button class="btn primario" onclick="location.href='incidente.html'">➕ Reportar incidente</button>
+  </div>
+  <div class="grid" id="lista"></div>
+  <div class="vacio" id="vacio" style="display:none">
+    No hay incidentes reportados. ¡Qué bueno! 🎉<br><br>
+    Si una unidad tiene una falla o un percance, toca <b>➕ Reportar incidente</b>.
+  </div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let YO=null, INCIDENTES=[];
+
+async function inicio(){
+  YO = await exigirSesion(); if(!YO) return;
+  await cargar();
+  const ev = conectarEnVivo(()=>cargar());
+  if(ev) document.getElementById("envivo").style.display="inline-flex";
+}
+async function cargar(){
+  INCIDENTES = await api.get("/api/incidentes");
+  pintar();
+}
+function pintar(){
+  const cont=document.getElementById("lista"), vacio=document.getElementById("vacio");
+  if(!INCIDENTES.length){ cont.innerHTML=""; vacio.style.display="block"; return; }
+  vacio.style.display="none";
+  cont.innerHTML=INCIDENTES.map(i=>`
+    <div class="tarjeta" onclick="location.href='incidente.html?id=${i.id}'">
+      <div class="cli">⚠️ ${escaparHTML(i.unidad||"—")}</div>
+      <div class="desc">${escaparHTML(i.descripcion||"(sin descripción)")}</div>
+      <div class="meta">📅 ${fechaBonita(i.fecha)} ${i.hora?("· "+i.hora):""}</div>
+      <div class="chips">
+        <span class="chip">Reporta: ${escaparHTML(i.reporta||"—")}</span>
+        <span class="chip">📷 ${i.num_fotos} foto${i.num_fotos===1?"":"s"}</span>
+      </div>
+    </div>`).join("");
+}
+inicio();
+</script>
+</body>
+</html>

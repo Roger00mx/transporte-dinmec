@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control de Transporte — PDF</title>
+<style>
+  :root{--pri:#1c3a63;--naranja:#e07312;--linea:#cfd6e0;--gris:#5b6470}
+  *{box-sizing:border-box}
+  body{font-family:"Segoe UI",system-ui,Arial,sans-serif;color:#1f2733;margin:0;background:#f4f7f5}
+  .acciones{position:sticky;top:0;background:var(--pri);color:#fff;padding:12px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:5}
+  .acciones .crece{flex:1}
+  .acciones input[type=date]{border:none;border-radius:7px;padding:7px 9px;font-family:inherit}
+  .acciones label{font-size:.82rem}
+  .btn{border:none;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer;font-family:inherit;font-size:.92rem}
+  .btn.primario{background:#fff;color:var(--pri)}
+  .btn.fantasma{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.5)}
+  .hoja{background:#fff;max-width:1100px;margin:18px auto;padding:26px 30px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+  .enc{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--naranja);padding-bottom:10px;margin-bottom:14px}
+  .enc .marca img{height:52px;display:block}
+  .enc .folio{font-size:.8rem;color:var(--gris);text-align:right}
+  h1{font-size:1.1rem;color:var(--pri);margin:0 0 8px}
+  /* Tabla bitácora */
+  table{width:100%;border-collapse:collapse;font-size:.78rem}
+  th{background:var(--pri);color:#fff;padding:6px 7px;text-align:left;font-size:.7rem;text-transform:uppercase}
+  td{border:1px solid var(--linea);padding:5px 7px;vertical-align:top}
+  td img{height:34px;max-width:110px;object-fit:contain;display:block}
+  tr{break-inside:avoid}
+  /* Ficha individual */
+  .datos{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:.92rem;margin:12px 0}
+  .datos div span{color:var(--gris);font-weight:600}
+  .bloque-tit{background:var(--pri);color:#fff;padding:7px 12px;border-radius:6px;margin:18px 0 8px;font-weight:700;font-size:.9rem}
+  .firmas{display:flex;flex-wrap:wrap;gap:22px;margin-top:10px}
+  .f{text-align:center}
+  .f img{height:70px;max-width:220px;object-fit:contain;border-bottom:1.5px solid #1f2733;display:block;margin:0 auto}
+  .f .linea-vacia{height:70px;border-bottom:1.5px solid #1f2733;width:190px}
+  .f .rol{font-size:.74rem;color:var(--gris)}
+  .f .nom{font-size:.85rem;font-weight:600}
+  .fotos{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .fotos img{height:130px;border-radius:6px;border:1px solid var(--linea)}
+  .vacio{color:var(--gris);text-align:center;padding:30px}
+  .obs{font-size:.9rem;background:#f6f8f7;border:1px solid var(--linea);border-radius:8px;padding:10px 12px}
+  @media print{
+    .acciones{display:none}
+    body{background:#fff}
+    .hoja{box-shadow:none;margin:0;max-width:none;padding:0}
+    @page{margin:12mm;size:landscape}
+  }
+  @media print{ body.ficha @page{size:portrait} }
+</style>
+</head>
+<body>
+<div class="acciones">
+  <button class="btn fantasma" onclick="history.length>1?history.back():location.href='index.html'">← Volver</button>
+  <div id="filtros" style="display:none;align-items:center;gap:8px">
+    <label>Desde <input type="date" id="f-desde"></label>
+    <label>Hasta <input type="date" id="f-hasta"></label>
+    <button class="btn fantasma" onclick="cargarBitacora()">Aplicar</button>
+  </div>
+  <div class="crece"></div>
+  <button class="btn primario" onclick="window.print()">🖨️ Guardar como PDF / Imprimir</button>
+</div>
+<div class="hoja" id="hoja"><div class="vacio">Cargando…</div></div>
+
+<script src="comun.js"></script>
+<script>
+const ID = paramURL("id");
+const esFinal = v => v.estado==="finalizado";
+
+function encabezado(sub){
+  return `<div class="enc">
+    <div class="marca"><img src="/logo.png" alt="DINMEC"><div style="font-size:.8rem;color:#5b6470;margin-top:2px">Control de Transporte · Bitácora de unidades</div></div>
+    <div class="folio">${sub}</div>
+  </div>`;
+}
+function firma(img, nombre, rol){
+  return `<div class="f">
+    ${img?`<img src="${img}">`:`<div class="linea-vacia"></div>`}
+    <div class="nom">${escaparHTML(nombre||"")}</div>
+    <div class="rol">${escaparHTML(rol)}</div>
+  </div>`;
+}
+
+// ============ MODO 1: ficha de UNA salida ============
+async function cargarFicha(){
+  document.body.classList.add("ficha");
+  const v = await api.get("/api/viaje/"+ID);
+  if(v.error){ document.getElementById("hoja").innerHTML="<div class='vacio'>Registro no encontrado</div>"; return; }
+  let html = encabezado("Registro de salida<br><b>"+escaparHTML(v.folio||"")+"</b>");
+  html += `<h1>Salida de unidad ${escaparHTML(v.unidad||"")} · ${esFinal(v)?"Finalizada":"En curso"}</h1>
+    <div class="bloque-tit">Datos de la salida</div>
+    <div class="datos">
+      <div><span>Descripción de actividad:</span> ${escaparHTML(v.descripcion||"—")}</div>
+      <div><span>Solicitante:</span> ${escaparHTML(v.solicitante||"—")}</div>
+      <div><span>Fecha de salida:</span> ${fechaBonita(v.fecha_salida)}</div>
+      <div><span>Hora de salida:</span> ${escaparHTML(v.hora_salida||"—")}</div>
+      ${v.fecha_regreso?`<div><span>Regreso estimado:</span> ${fechaBonita(v.fecha_regreso)}</div>`:""}
+      <div><span>Unidad:</span> ${escaparHTML(v.unidad||"—")}</div>
+      <div><span>Operador:</span> ${escaparHTML(v.operador||"—")}</div>
+      <div><span>Entrega las llaves:</span> ${escaparHTML(v.llaves_entrega_por||"—")}</div>
+      <div><span>Recibe las llaves:</span> ${escaparHTML(v.llaves_recibe||"—")}</div>
+    </div>
+    <div class="bloque-tit">Regreso</div>
+    <div class="datos">
+      <div><span>Fecha real de regreso:</span> ${v.fecha_regreso_real?fechaBonita(v.fecha_regreso_real):"—"}</div>
+      <div><span>Hora de regreso:</span> ${escaparHTML(v.hora_regreso||"—")}</div>
+      <div><span>Recibe la carga:</span> ${escaparHTML(v.recibe_carga||"—")}</div>
+      <div><span>Llaves devueltas a:</span> ${escaparHTML(v.llaves_devuelve_a||"—")}</div>
+    </div>
+    ${v.observaciones?`<div class="obs"><b>Observaciones:</b> ${escaparHTML(v.observaciones)}</div>`:""}
+    <div class="bloque-tit">Firmas</div>
+    <div class="firmas">
+      ${firma(v.firma_solicitante, v.solicitante, "Solicitante")}
+      ${firma(v.firma_operador, v.operador, "Operador")}
+      ${firma(v.firma_llaves_salida, v.llaves_recibe, "Recibe llaves (salida)")}
+      ${firma(v.firma_recibe, v.recibe_carga, "Recibe carga")}
+      ${firma(v.firma_llaves_regreso, v.llaves_devuelve_a, "Recibe llaves (regreso)")}
+    </div>`;
+  if(v.fotos && v.fotos.length){
+    html += `<div class="bloque-tit">Evidencias</div><div class="fotos">${v.fotos.map(f=>`<img src="${f.url}">`).join("")}</div>`;
+  }
+  document.getElementById("hoja").innerHTML=html;
+}
+
+// ============ MODO 2: bitácora (tabla como el Excel) ============
+async function cargarBitacora(){
+  const desde=document.getElementById("f-desde").value;
+  const hasta=document.getElementById("f-hasta").value;
+  let url="/api/viajes";
+  const q=[];
+  if(desde) q.push("desde="+desde);
+  if(hasta) q.push("hasta="+hasta);
+  if(q.length) url+="?"+q.join("&");
+  const lista=await api.get(url);
+  const rango=(desde||hasta)?`${desde?("del "+fechaBonita(desde)):""} ${hasta?("al "+fechaBonita(hasta)):""}`:"todas las fechas";
+  let html = encabezado("Bitácora de control de unidades<br>"+rango);
+  if(!lista.length){
+    html += `<div class="vacio">No hay salidas registradas en ese rango de fechas.</div>`;
+  } else {
+    html += `<table><thead><tr>
+      <th>Folio</th><th>Descripción de actividad a realizar</th><th>Solicitante</th>
+      <th>Fecha de salida</th><th>Hora salida</th><th>Fecha de regreso</th><th>Hora de regreso</th>
+      <th>Unidad</th><th>Operador</th><th>Recibe carga</th>
+    </tr></thead><tbody>` +
+    lista.map(v=>`<tr>
+      <td>${escaparHTML(v.folio||"")}</td>
+      <td>${escaparHTML(v.descripcion||"")}</td>
+      <td>${escaparHTML(v.solicitante||"")}${v.firmado_sol?" ✓":""}</td>
+      <td>${fechaBonita(v.fecha_salida)}</td>
+      <td>${escaparHTML(v.hora_salida||"")}</td>
+      <td>${v.fecha_regreso_real?fechaBonita(v.fecha_regreso_real):(v.fecha_regreso?fechaBonita(v.fecha_regreso)+" (est.)":"")}</td>
+      <td>${escaparHTML(v.hora_regreso||"")}</td>
+      <td>${escaparHTML(v.unidad||"")}</td>
+      <td>${escaparHTML(v.operador||"")}${v.firmado_op?" ✓":""}</td>
+      <td>${escaparHTML(v.recibe_carga||"")}</td>
+    </tr>`).join("") + `</tbody></table>
+    <div style="font-size:.75rem;color:var(--gris);margin-top:8px">✓ = con firma capturada en la app. Para ver las firmas y evidencias de una salida, ábrela en la app y usa su botón PDF.</div>`;
+  }
+  document.getElementById("hoja").innerHTML=html;
+}
+
+async function inicio(){
+  const yo=await exigirSesion(); if(!yo) return;
+  if(ID){ cargarFicha(); }
+  else {
+    document.getElementById("filtros").style.display="flex";
+    // por defecto: mes actual
+    const hoy=fechaHoy();
+    document.getElementById("f-desde").value=hoy.slice(0,8)+"01";
+    document.getElementById("f-hasta").value=hoy;
+    cargarBitacora();
+  }
+}
+inicio();
+</script>
+</body>
+</html>

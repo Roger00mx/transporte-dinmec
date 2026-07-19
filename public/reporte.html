@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reporte mensual de gasolina — DINMEC</title>
+<style>
+  :root{--pri:#1c3a63;--naranja:#e07312;--linea:#cfd6e0;--gris:#5b6470}
+  *{box-sizing:border-box}
+  body{font-family:"Segoe UI",system-ui,Arial,sans-serif;color:#1f2733;margin:0;background:#f5f6f9}
+  .acciones{position:sticky;top:0;background:var(--pri);color:#fff;padding:12px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:5}
+  .acciones .crece{flex:1}
+  .acciones input[type=month]{border:none;border-radius:7px;padding:7px 9px;font-family:inherit}
+  .btn{border:none;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer;font-family:inherit;font-size:.92rem}
+  .btn.primario{background:#fff;color:var(--pri)}
+  .btn.fantasma{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.5)}
+  .hoja{background:#fff;max-width:1100px;margin:18px auto;padding:26px 30px;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+  .enc{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--naranja);padding-bottom:10px;margin-bottom:14px}
+  .enc img{height:52px}
+  .enc .folio{font-size:.8rem;color:var(--gris);text-align:right}
+  h1{font-size:1.1rem;color:var(--pri);margin:14px 0 8px}
+  table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:6px}
+  th{background:var(--pri);color:#fff;padding:6px 8px;text-align:left;font-size:.72rem;text-transform:uppercase}
+  td{border:1px solid var(--linea);padding:5px 8px}
+  tr{break-inside:avoid}
+  .num{text-align:right}
+  .tot td{font-weight:700;background:#eef2f8}
+  .vacio{color:var(--gris);text-align:center;padding:30px}
+  .nota{font-size:.75rem;color:var(--gris);margin-top:8px}
+  @media print{
+    .acciones{display:none}
+    body{background:#fff}
+    .hoja{box-shadow:none;margin:0;max-width:none;padding:0}
+    @page{margin:12mm}
+  }
+</style>
+</head>
+<body>
+<div class="acciones">
+  <button class="btn fantasma" onclick="location.href='gasolina.html'">← Volver</button>
+  <label>Mes <input type="month" id="f-mes"></label>
+  <button class="btn fantasma" onclick="cargar()">Aplicar</button>
+  <div class="crece"></div>
+  <button class="btn primario" onclick="window.print()">🖨️ Guardar como PDF / Imprimir</button>
+</div>
+<div class="hoja" id="hoja"><div class="vacio">Cargando…</div></div>
+
+<script src="comun.js"></script>
+<script>
+const MESES=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+
+async function cargar(){
+  const mes=document.getElementById("f-mes").value;
+  const d=await api.get("/api/reporte-gasolina?mes="+mes);
+  const [a,m]=d.mes.split("-").map(Number);
+  let html=`<div class="enc">
+    <div><img src="/logo.png" alt="DINMEC"><div style="font-size:.8rem;color:#5b6470;margin-top:2px">Control de Transporte</div></div>
+    <div class="folio">Reporte mensual de gasolina<br><b>${MESES[m-1]} ${a}</b></div>
+  </div>`;
+
+  if(!d.cargas.length){
+    html+=`<div class="vacio">No hay cargas de gasolina registradas en ${MESES[m-1]} de ${a}.</div>`;
+    document.getElementById("hoja").innerHTML=html;
+    return;
+  }
+
+  // ---- resumen por unidad ----
+  html+=`<h1>Resumen por unidad</h1>
+  <table><thead><tr>
+    <th>Unidad</th><th class="num">Cargas</th><th class="num">💵 Efectivo</th><th class="num">💳 Tarjeta</th>
+    <th class="num">Km inicio</th><th class="num">Km fin</th><th class="num">Km recorridos</th>
+  </tr></thead><tbody>`;
+  let totC=0,totKm=0;
+  for(const r of d.resumen){
+    totC+=r.cargas; if(r.km_recorridos) totKm+=r.km_recorridos;
+    html+=`<tr>
+      <td>🚛 ${escaparHTML(r.unidad)}</td>
+      <td class="num">${r.cargas}</td>
+      <td class="num">${r.efectivo}</td>
+      <td class="num">${r.tarjeta}</td>
+      <td class="num">${r.km_inicio!==null?Number(r.km_inicio).toLocaleString():"—"}</td>
+      <td class="num">${r.km_fin!==null?Number(r.km_fin).toLocaleString():"—"}</td>
+      <td class="num"><b>${r.km_recorridos!==null?Number(r.km_recorridos).toLocaleString():"—"}</b></td>
+    </tr>`;
+  }
+  html+=`<tr class="tot"><td>TOTAL</td><td class="num">${totC}</td><td colspan="4"></td><td class="num">${totKm?totKm.toLocaleString():"—"}</td></tr>`;
+  html+=`</tbody></table>
+  <div class="nota">Los km recorridos se calculan con la última lectura del mes anterior (si existe) y la última del mes. Registra el kilometraje en cada carga para que el cálculo sea exacto.</div>`;
+
+  // ---- detalle de cargas ----
+  html+=`<h1>Detalle de cargas (${d.cargas.length})</h1>
+  <table><thead><tr>
+    <th>Fecha</th><th>Hora</th><th>Unidad</th><th>Lugar</th><th>Pago</th><th class="num">Kilometraje</th><th>Nivel</th><th>Operador</th><th>Obs.</th>
+  </tr></thead><tbody>`;
+  for(const c of d.cargas){
+    html+=`<tr>
+      <td>${fechaBonita(c.fecha)}</td>
+      <td>${escaparHTML(c.hora||"")}</td>
+      <td>${escaparHTML(c.unidad||"")}</td>
+      <td>${escaparHTML(c.lugar||"")}</td>
+      <td>${c.tipo_pago==="tarjeta"?"💳 Tarjeta":c.tipo_pago==="efectivo"?"💵 Efectivo":""}</td>
+      <td class="num">${c.kilometraje?Number(parseFloat(c.kilometraje)).toLocaleString():"—"}</td>
+      <td>${c.nivel_combustible==="lleno"?"Lleno":c.nivel_combustible==="reserva"?"Reserva":escaparHTML(c.nivel_combustible||"—")}</td>
+      <td>${escaparHTML(c.operador||"")}</td>
+      <td>${escaparHTML(c.observaciones||"")}</td>
+    </tr>`;
+  }
+  html+=`</tbody></table>`;
+  document.getElementById("hoja").innerHTML=html;
+}
+
+async function inicio(){
+  const yo=await exigirSesion(); if(!yo) return;
+  document.getElementById("f-mes").value=fechaHoy().slice(0,7);
+  cargar();
+}
+inicio();
+</script>
+</body>
+</html>

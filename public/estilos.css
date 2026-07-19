@@ -1,0 +1,122 @@
+/* ============ CONTROL DE TRANSPORTE DINMEC — Estilos ============ */
+:root{
+  /* Colores DINMEC: naranja del engrane y azul de las letras del logo */
+  --pri:#e07312; --pri-claro:#f7941d; --pri-bg:#fdf0e2;
+  --azul:#1c3a63; --azul-bg:#e8eef7;
+  --verde:#0f9d58; --verde-bg:#e6f5ec;
+  --gris:#5b6470; --gris-claro:#eef1f5; --linea:#dfe4ea;
+  --rojo:#d23f3f; --ambar:#e8a317; --ambar-bg:#fdf3dd;
+  --texto:#1f2733; --blanco:#fff; --sombra:0 1px 3px rgba(30,50,80,.10),0 4px 14px rgba(30,50,80,.06);
+  --r:12px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--texto);background:#f5f6f9;line-height:1.45;-webkit-text-size-adjust:100%}
+a{color:var(--pri-claro);text-decoration:none}
+h1,h2,h3{margin:0 0 .4em}
+
+/* Barra superior */
+.barra{position:sticky;top:0;z-index:20;background:linear-gradient(90deg,var(--azul),#27508a);color:#fff;padding:8px 16px;display:flex;align-items:center;gap:12px;box-shadow:var(--sombra);border-bottom:3px solid var(--pri)}
+.barra .logo{font-weight:700;font-size:1.05rem;letter-spacing:.3px;display:flex;align-items:center;gap:10px}
+.barra .logo b{background:#fff;color:var(--azul);border-radius:7px;padding:2px 8px;font-size:.8rem}
+.barra .logo .lg{background:#fff;border-radius:9px;padding:3px 9px;display:flex;align-items:center}
+.barra .logo .lg img{height:32px;display:block}
+.barra .crece{flex:1}
+.barra .usuario{font-size:.85rem;opacity:.95;background:rgba(255,255,255,.14);padding:5px 11px;border-radius:20px;cursor:pointer;white-space:nowrap}
+.barra .usuario:hover{background:rgba(255,255,255,.24)}
+
+.contenedor{max-width:1100px;margin:0 auto;padding:18px 16px 60px}
+
+/* Botones */
+.btn{display:inline-flex;align-items:center;gap:7px;border:none;border-radius:9px;padding:10px 16px;font-size:.95rem;font-weight:600;cursor:pointer;background:var(--gris-claro);color:var(--texto);transition:.15s;font-family:inherit}
+.btn:hover{filter:brightness(.97)}
+.btn:active{transform:translateY(1px)}
+.btn.primario{background:var(--pri);color:#fff}
+.btn.verde{background:var(--verde);color:#fff}
+.btn.fantasma{background:transparent;border:1.5px solid var(--linea)}
+.btn.peligro{background:#fdeaea;color:var(--rojo)}
+.btn.chico{padding:7px 12px;font-size:.85rem}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* Navegación entre secciones (Salidas / Gasolina / Incidentes) */
+.nav-sec{display:flex;gap:8px;margin:14px 0 2px;flex-wrap:wrap}
+.nav-sec a{display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;background:#fff;color:var(--gris);font-weight:700;border:1.5px solid var(--linea);font-size:.92rem}
+.nav-sec a.activa{background:var(--azul);color:#fff;border-color:var(--azul)}
+.nav-sec a:hover{border-color:var(--pri)}
+
+/* Pestañas */
+.pestanas{display:flex;gap:8px;margin:16px 0 4px;flex-wrap:wrap}
+.pestana{padding:10px 18px;border-radius:10px;background:#e8ebf1;color:var(--gris);font-weight:700;cursor:pointer;border:1px solid var(--linea)}
+.pestana.activa{background:var(--pri);color:#fff;border-color:var(--pri)}
+
+/* Tarjetas de viaje */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:16px}
+.tarjeta{background:#fff;border-radius:var(--r);box-shadow:var(--sombra);padding:16px;cursor:pointer;border:1px solid var(--linea);transition:.15s;display:flex;flex-direction:column;gap:6px}
+.tarjeta:hover{transform:translateY(-2px);box-shadow:0 6px 22px rgba(30,50,80,.12)}
+.tarjeta .cli{font-weight:700;font-size:1.05rem;color:var(--azul);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tarjeta .desc{font-size:.92rem;color:var(--texto);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tarjeta .meta{font-size:.85rem;color:var(--gris)}
+.tarjeta .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.chip{font-size:.72rem;background:var(--azul-bg);color:var(--azul);padding:3px 9px;border-radius:20px;font-weight:600}
+.chip.encurso{background:var(--ambar-bg);color:#a4700a}
+.chip.finalizado{background:var(--verde-bg);color:var(--verde)}
+
+/* Encabezado de seccion */
+.seccion-tit{display:flex;align-items:center;gap:10px;margin:22px 0 10px;flex-wrap:wrap}
+.seccion-tit h2{margin:0;font-size:1.15rem;color:var(--azul)}
+.vacio{text-align:center;color:var(--gris);padding:50px 20px;background:#fff;border-radius:var(--r);border:1px dashed var(--linea)}
+
+/* Formularios */
+.cabecera{background:#fff;border-radius:var(--r);box-shadow:var(--sombra);padding:18px;border:1px solid var(--linea);margin-top:14px}
+.cabecera > h3{color:var(--azul);font-size:1rem;display:flex;align-items:center;gap:8px}
+.campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.campo{display:flex;flex-direction:column;gap:4px}
+.campo label{font-size:.78rem;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.3px}
+.campo input,.campo textarea,.campo select{border:1.5px solid var(--linea);border-radius:8px;padding:9px 11px;font-size:.95rem;font-family:inherit;background:#fff;width:100%}
+.campo input:focus,.campo textarea:focus,.campo select:focus{outline:none;border-color:var(--pri-claro);box-shadow:0 0 0 3px rgba(15,138,86,.12)}
+.campo input:disabled{background:var(--gris-claro);color:var(--gris)}
+.campo .nota{font-size:.75rem;color:var(--gris)}
+.campo.ancho{grid-column:1/-1}
+
+/* Firmas */
+.verif{border:1px solid var(--linea);border-radius:10px;padding:12px;margin-top:8px;background:#fbfdfc}
+.verif .rol{font-weight:700;color:var(--azul);font-size:.92rem;margin-bottom:7px}
+.firma-zona{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.firma-caja{border:1.5px dashed var(--pri-claro);border-radius:10px;background:#fff;position:relative;width:280px;max-width:100%;height:130px;touch-action:none}
+.firma-caja canvas{width:100%;height:100%;border-radius:10px;display:block}
+.firma-caja .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#b3bccb;font-size:.85rem;pointer-events:none}
+.firma-img{width:280px;max-width:100%;height:130px;object-fit:contain;border:1.5px solid var(--verde);border-radius:10px;background:#fff}
+.firma-acc{display:flex;flex-direction:column;gap:7px}
+.firmado-por{font-size:.8rem;color:var(--verde);font-weight:600}
+
+/* Fotos */
+.fotos-grid{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.foto-item{position:relative;width:110px;height:110px;border-radius:10px;overflow:hidden;border:1px solid var(--linea)}
+.foto-item img{width:100%;height:100%;object-fit:cover}
+.foto-item button{position:absolute;top:4px;right:4px;background:rgba(210,63,63,.92);color:#fff;border:none;border-radius:50%;width:24px;height:24px;cursor:pointer;font-weight:700;line-height:1}
+.foto-add{width:110px;height:110px;border:2px dashed var(--pri-claro);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--pri-claro);cursor:pointer;font-size:.78rem;font-weight:600;background:var(--pri-bg)}
+.foto-add input{display:none}
+
+/* Pie de accion */
+.pie-acciones{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.guardado{font-size:.8rem;color:var(--verde);align-self:center;margin-right:auto}
+
+/* Modal */
+.modal-fondo{position:fixed;inset:0;background:rgba(10,30,20,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+.modal{background:#fff;border-radius:16px;padding:22px;width:480px;max-width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h2{color:var(--azul)}
+.modal .acciones{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+
+/* Toast */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1f2733;color:#fff;padding:11px 20px;border-radius:30px;font-size:.9rem;z-index:80;box-shadow:0 6px 24px rgba(0,0,0,.25);opacity:0;transition:.3s;pointer-events:none}
+.toast.ver{opacity:1}
+
+/* Aviso de conexion en vivo */
+.envivo{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;color:#cfeede}
+.envivo i{width:8px;height:8px;border-radius:50%;background:#67d98a;display:inline-block;animation:pulso 1.6s infinite}
+@keyframes pulso{0%,100%{opacity:1}50%{opacity:.35}}
+
+@media(max-width:600px){
+  .contenedor{padding:14px 11px 50px}
+  .barra .logo span{display:none}
+}

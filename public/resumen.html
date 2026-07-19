@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resumen del viaje — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+  .stat{background:#fff;border-radius:12px;border:1px solid var(--linea);box-shadow:var(--sombra);padding:14px;text-align:center}
+  .stat .v{font-size:1.35rem;font-weight:800;color:var(--azul)}
+  .stat .e{font-size:.75rem;color:var(--gris);text-transform:uppercase;font-weight:700;letter-spacing:.3px}
+  #map{height:46vh;min-height:300px;border-radius:12px;box-shadow:var(--sombra);border:1px solid var(--linea);margin-top:14px}
+  .lista-item{background:#fff;border:1px solid var(--linea);border-radius:10px;padding:11px 14px;margin-top:8px;font-size:.9rem}
+  .lista-item .cabeza{font-weight:700;color:var(--azul)}
+  .lista-item .sub{color:var(--gris);font-size:.83rem}
+  .sin-gps{background:var(--ambar-bg);border:1px solid #eccf9a;border-radius:12px;padding:14px;margin-top:14px;color:#7a5408;font-size:.9rem}
+  @media print{
+    .barra,.no-imprimir{display:none!important}
+    body{background:#fff}
+    #map{height:340px}
+  }
+</style>
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" id="btn-volver">← Volver</button>
+</div>
+
+<div class="contenedor" id="cont" style="display:none">
+  <div class="seccion-tit">
+    <h2 id="titulo">📊 Resumen del viaje</h2>
+    <span class="chip" id="chip-estado"></span>
+    <div style="flex:1"></div>
+    <button class="btn fantasma chico no-imprimir" onclick="window.print()">🖨️ Imprimir / PDF</button>
+  </div>
+
+  <div class="cabecera" style="margin-top:10px">
+    <div class="campos" id="datos-viaje" style="font-size:.9rem"></div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+  <div class="sin-gps" id="sin-gps" style="display:none"></div>
+  <div id="map" style="display:none"></div>
+
+  <div id="sec-paradas" style="display:none">
+    <div class="seccion-tit"><h2>🅿️ Paradas en el trayecto</h2></div>
+    <div id="lista-paradas"></div>
+  </div>
+
+  <div class="seccion-tit"><h2>⛽ Cargas de gasolina durante el viaje</h2></div>
+  <div id="lista-cargas"></div>
+
+  <div class="seccion-tit"><h2>⚠️ Incidentes durante el viaje</h2></div>
+  <div id="lista-incidentes"></div>
+</div>
+
+<script src="comun.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const ID=paramURL("id");
+
+function horaDe(ms){ return new Date(ms).toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"}); }
+function fechaHoraDe(ms){ return new Date(ms).toLocaleDateString("es-MX",{day:"numeric",month:"short"})+" "+horaDe(ms); }
+function dur(ms){ const m=Math.round(ms/60000); return m<60? m+" min" : Math.floor(m/60)+" h "+(m%60)+" min"; }
+
+async function inicio(){
+  const yo=await exigirSesion(); if(!yo) return;
+  const d=await api.get("/api/viaje/"+ID+"/resumen");
+  if(d.error){ aviso(d.error); setTimeout(()=>location.href="index.html",1200); return; }
+  const v=d.viaje;
+  document.getElementById("btn-volver").onclick=()=>location.href="viaje.html?id="+ID;
+  document.getElementById("titulo").textContent="📊 Resumen "+(v.folio||"");
+  const ch=document.getElementById("chip-estado");
+  ch.className="chip "+(v.estado==="finalizado"?"finalizado":"encurso");
+  ch.textContent=v.estado==="finalizado"?"✅ Finalizado":"🟡 En curso (resumen hasta ahora)";
+
+  document.getElementById("datos-viaje").innerHTML=`
+    <div><b style="color:var(--gris)">Unidad:</b> 🚛 ${escaparHTML(v.unidad||"—")}</div>
+    <div><b style="color:var(--gris)">Operador:</b> ${escaparHTML(v.operador||"—")}</div>
+    <div><b style="color:var(--gris)">Actividad:</b> ${escaparHTML(v.descripcion||"—")}</div>
+    <div><b style="color:var(--gris)">Salida:</b> ${fechaHoraDe(d.inicio)}</div>
+    <div><b style="color:var(--gris)">${v.estado==="finalizado"?"Regreso":"Corte"}:</b> ${fechaHoraDe(d.fin)}</div>`;
+
+  // ---- estadísticas ----
+  const stats=[{v:dur(d.fin-d.inicio),e:"Duración"}];
+  if(d.gps.ok){
+    stats.push({v:d.gps.distancia_km.toLocaleString()+" km",e:"Recorrido (GPS)"});
+    stats.push({v:d.gps.vel_max+" km/h",e:"Velocidad máxima"});
+    stats.push({v:d.gps.paradas.length,e:"Paradas"});
+  }
+  stats.push({v:d.cargas.length,e:"Cargas de gasolina"});
+  stats.push({v:d.incidentes.length,e:"Incidentes"});
+  document.getElementById("stats").innerHTML=stats.map(s=>`<div class="stat"><div class="v">${s.v}</div><div class="e">${s.e}</div></div>`).join("");
+
+  // ---- mapa de ruta ----
+  if(d.gps.ok && d.gps.ruta_mapa.length>1){
+    const mapDiv=document.getElementById("map");
+    mapDiv.style.display="block";
+    const map=L.map("map");
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(map);
+    const linea=L.polyline(d.gps.ruta_mapa,{color:"#e07312",weight:4,opacity:.85}).addTo(map);
+    const ini=d.gps.ruta_mapa[0], fin=d.gps.ruta_mapa[d.gps.ruta_mapa.length-1];
+    L.marker(ini).addTo(map).bindPopup("🚦 Inicio");
+    L.marker(fin).addTo(map).bindPopup(v.estado==="finalizado"?"🏁 Fin":"📍 Última posición");
+    d.gps.paradas.forEach((p,i)=>{
+      L.circleMarker([p.lat,p.lng],{radius:7,color:"#fff",weight:2,fillColor:"#e8a317",fillOpacity:1}).addTo(map)
+        .bindPopup("🅿️ Parada "+(i+1)+"<br>"+horaDe(p.inicio)+(p.minutos?(" · "+p.minutos+" min"):""));
+    });
+    map.fitBounds(linea.getBounds(),{padding:[30,30]});
+    setTimeout(()=>{ map.invalidateSize(); map.fitBounds(linea.getBounds(),{padding:[30,30]}); },300);
+  } else if(!d.gps.ok){
+    const sg=document.getElementById("sin-gps");
+    sg.style.display="block";
+    sg.innerHTML=d.gps.motivo==="sin_gps"
+      ? "📡 Esta unidad no tiene GPS vinculado. En <b>🚛 Flota → ✏️ Editar ficha</b> elige su GPS del Monitor y el resumen mostrará la ruta, paradas y velocidad."
+      : "📡 No pude conectar con el Monitor DINMEC para leer la ruta. Enciéndelo y vuelve a abrir este resumen.";
+  } else {
+    document.getElementById("sin-gps").style.display="block";
+    document.getElementById("sin-gps").textContent="📡 El GPS no registró puntos de ruta en el horario de este viaje.";
+  }
+
+  // ---- paradas ----
+  if(d.gps.ok && d.gps.paradas.length){
+    document.getElementById("sec-paradas").style.display="block";
+    document.getElementById("lista-paradas").innerHTML=d.gps.paradas.map((p,i)=>`
+      <div class="lista-item">
+        <div class="cabeza">🅿️ Parada ${i+1} · ${horaDe(p.inicio)}${p.fin?(" → "+horaDe(p.fin)):""} ${p.minutos?("· "+p.minutos+" min"):""}</div>
+        <div class="sub">${escaparHTML(p.direccion||"")} · <a href="https://maps.google.com/?q=${p.lat},${p.lng}" target="_blank">🗺️ Ver en Maps</a></div>
+      </div>`).join("");
+  }
+
+  // ---- cargas ----
+  document.getElementById("lista-cargas").innerHTML=d.cargas.length?d.cargas.map(c=>`
+    <div class="lista-item" style="cursor:pointer" onclick="location.href='carga.html?id=${c.id}'">
+      <div class="cabeza">⛽ ${fechaBonita(c.fecha)} ${c.hora||""} · ${escaparHTML(c.lugar||"")}</div>
+      <div class="sub">${c.tipo_pago==="tarjeta"?"💳 Tarjeta":"💵 Efectivo"}
+        ${c.kilometraje?("· 🛣️ "+Number(parseFloat(c.kilometraje)).toLocaleString()+" km"):""}
+        ${c.nivel_combustible?("· Nivel: "+(c.nivel_combustible==="lleno"?"Lleno":c.nivel_combustible)):""}
+        · ${escaparHTML(c.operador||"")}</div>
+    </div>`).join("")
+    : `<div class="vacio" style="padding:18px">No hubo cargas de gasolina en este viaje.</div>`;
+
+  // ---- incidentes ----
+  document.getElementById("lista-incidentes").innerHTML=d.incidentes.length?d.incidentes.map(i=>`
+    <div class="lista-item" style="cursor:pointer" onclick="location.href='incidente.html?id=${i.id}'">
+      <div class="cabeza">⚠️ ${fechaBonita(i.fecha)} ${i.hora||""}</div>
+      <div class="sub">${escaparHTML(i.descripcion||"")} · Reportó: ${escaparHTML(i.reporta||"")}</div>
+    </div>`).join("")
+    : `<div class="vacio" style="padding:18px">Sin incidentes en este viaje. ✅</div>`;
+
+  document.getElementById("cont").style.display="block";
+}
+inicio();
+</script>
+</body>
+</html>

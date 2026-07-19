@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usuarios y unidades — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+<style>
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:var(--r);overflow:hidden;box-shadow:var(--sombra)}
+  th{background:var(--azul);color:#fff;text-align:left;padding:10px 12px;font-size:.85rem}
+  td{padding:10px 12px;border-bottom:1px solid var(--linea);font-size:.92rem}
+  tr:last-child td{border-bottom:none}
+  .rolchip{font-size:.75rem;padding:3px 10px;border-radius:20px;font-weight:700}
+  .rolchip.admin{background:#fdeaea;color:#d23f3f}
+  .rolchip.supervisor{background:var(--pri-bg);color:var(--pri)}
+  .rolchip.operador{background:var(--gris-claro);color:var(--gris)}
+  .fila-nueva{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .fila-nueva input,.fila-nueva select{border:1.5px solid var(--linea);border-radius:8px;padding:9px 11px;font-size:.92rem;font-family:inherit}
+</style>
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" onclick="location.href='index.html'">← Volver</button>
+</div>
+
+<div class="contenedor">
+  <div class="seccion-tit"><h2>👥 Usuarios</h2></div>
+  <p style="color:var(--gris);font-size:.9rem;margin-top:0">
+    <b>Administrador:</b> todo, incluida la fecha de salida y eliminar registros. ·
+    <b>Coordinador (supervisor):</b> registra y edita salidas. ·
+    <b>Operador:</b> registra el regreso, firma y sube evidencias.
+  </p>
+  <table id="tabla-usuarios"><thead>
+    <tr><th>Usuario</th><th>Nombre</th><th>Puesto</th><th>Rol en la app</th><th></th></tr>
+  </thead><tbody></tbody></table>
+
+  <div class="cabecera">
+    <h3>➕ Agregar usuario</h3>
+    <div class="campos">
+      <div class="campo"><label>Nombre completo</label><input id="n-nombre" placeholder="Ej. Juan Pérez"></div>
+      <div class="campo"><label>Usuario (para entrar)</label><input id="n-usuario" placeholder="Ej. juan"></div>
+      <div class="campo"><label>Puesto (opcional)</label><input id="n-rol" placeholder="Ej. Chofer"></div>
+      <div class="campo"><label>Rol en la app</label>
+        <select id="n-rol_app">
+          <option value="operador">Operador</option>
+          <option value="supervisor">Coordinador (supervisor)</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+      <div class="campo"><label>Contraseña</label><input id="n-clave" type="password" placeholder="mínimo 4 caracteres"></div>
+    </div>
+    <div class="pie-acciones"><button class="btn primario" onclick="crearUsuario()">Guardar usuario</button></div>
+  </div>
+
+  <div class="seccion-tit" style="margin-top:34px"><h2>🚚 Unidades</h2></div>
+  <table id="tabla-unidades"><thead>
+    <tr><th>Unidad</th><th style="width:120px"></th></tr>
+  </thead><tbody></tbody></table>
+  <div class="fila-nueva">
+    <input id="u-nombre" placeholder="Nombre de la nueva unidad (Ej. NP300)" style="flex:1;min-width:200px">
+    <button class="btn primario" onclick="crearUnidad()">➕ Agregar unidad</button>
+  </div>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let YO=null;
+async function inicio(){
+  YO=await exigirSesion(); if(!YO) return;
+  if(YO.rol_app!=="admin"){ aviso("Solo el administrador puede entrar aquí"); setTimeout(()=>location.href="index.html",1200); return; }
+  await Promise.all([cargarUsuarios(), cargarUnidades()]);
+}
+
+async function cargarUsuarios(){
+  const lista=await api.get("/api/usuarios");
+  const tb=document.querySelector("#tabla-usuarios tbody");
+  tb.innerHTML=lista.map(u=>`<tr>
+    <td>${escaparHTML(u.usuario)}</td>
+    <td>${escaparHTML(u.nombre)}</td>
+    <td>${escaparHTML(u.rol||"")}</td>
+    <td><span class="rolchip ${u.rol_app}">${u.rol_app==="admin"?"Administrador":u.rol_app==="supervisor"?"Coordinador":"Operador"}</span></td>
+    <td style="white-space:nowrap;text-align:right">
+      <button class="btn chico fantasma" onclick="cambiarClave('${u.id}','${escaparHTML(u.usuario)}')">🔑</button>
+      <button class="btn chico fantasma" onclick="cambiarRol('${u.id}','${u.rol_app}')">🔄 Rol</button>
+      ${u.id!==YO.id?`<button class="btn chico peligro" onclick="borrarUsuario('${u.id}','${escaparHTML(u.usuario)}')">🗑️</button>`:""}
+    </td></tr>`).join("");
+}
+async function crearUsuario(){
+  const b={nombre:v("n-nombre"),usuario:v("n-usuario"),rol:v("n-rol"),rol_app:document.getElementById("n-rol_app").value,clave:v("n-clave")};
+  if(!b.usuario||!b.clave){ aviso("Faltan usuario o contraseña"); return; }
+  if(b.clave.length<4){ aviso("La contraseña debe tener al menos 4 caracteres"); return; }
+  const r=await api.post("/api/usuarios",b);
+  if(r.ok){ aviso("Usuario creado ✅"); ["n-nombre","n-usuario","n-rol","n-clave"].forEach(i=>document.getElementById(i).value=""); cargarUsuarios(); }
+  else aviso(r.error||"No se pudo crear");
+}
+async function cambiarClave(id,usuario){
+  const clave=prompt("Nueva contraseña para "+usuario+":");
+  if(!clave) return;
+  if(clave.length<4){ aviso("Mínimo 4 caracteres"); return; }
+  const r=await api.put("/api/usuarios/"+id,{clave});
+  aviso(r.ok?"Contraseña cambiada ✅":(r.error||"Error"));
+}
+async function cambiarRol(id,actual){
+  const orden=["operador","supervisor","admin"];
+  const nuevo=orden[(orden.indexOf(actual)+1)%3];
+  const nombres={operador:"Operador",supervisor:"Coordinador (supervisor)",admin:"Administrador"};
+  if(!confirm("¿Cambiar el rol a "+nombres[nuevo]+"?")) return;
+  const r=await api.put("/api/usuarios/"+id,{rol_app:nuevo});
+  if(r.ok){ aviso("Rol actualizado ✅"); cargarUsuarios(); } else aviso(r.error||"Error");
+}
+async function borrarUsuario(id,usuario){
+  if(!confirm("¿Eliminar al usuario "+usuario+"? Ya no podrá entrar a la app.")) return;
+  const r=await api.del("/api/usuarios/"+id);
+  if(r.ok){ aviso("Usuario eliminado"); cargarUsuarios(); } else aviso(r.error||"Error");
+}
+
+async function cargarUnidades(){
+  const lista=await api.get("/api/unidades");
+  const tb=document.querySelector("#tabla-unidades tbody");
+  tb.innerHTML=lista.map(u=>`<tr>
+    <td>🚚 ${escaparHTML(u.nombre)}</td>
+    <td style="text-align:right"><button class="btn chico peligro" onclick="borrarUnidad('${u.id}','${escaparHTML(u.nombre)}')">Quitar</button></td>
+  </tr>`).join("") || `<tr><td colspan="2" style="color:var(--gris)">No hay unidades. Agrega la primera abajo.</td></tr>`;
+}
+async function crearUnidad(){
+  const nombre=v("u-nombre");
+  if(!nombre){ aviso("Escribe el nombre de la unidad"); return; }
+  const r=await api.post("/api/unidades",{nombre});
+  if(r.ok){ aviso("Unidad agregada ✅"); document.getElementById("u-nombre").value=""; cargarUnidades(); }
+  else aviso(r.error||"Error");
+}
+async function borrarUnidad(id,nombre){
+  if(!confirm("¿Quitar la unidad "+nombre+"? Los registros anteriores la conservan.")) return;
+  const r=await api.del("/api/unidades/"+id);
+  if(r.ok){ aviso("Unidad quitada"); cargarUnidades(); } else aviso(r.error||"Error");
+}
+
+function v(id){return document.getElementById(id).value.trim();}
+inicio();
+</script>
+</body>
+</html>
