@@ -248,8 +248,11 @@ const https = require("node:https");
 function leerMonitor(rutaMonitor) {
   const monitorURL = process.env.MONITOR_URL || "http://localhost:3400";
   const lib = monitorURL.startsWith("https") ? https : http;
+  const cabeceras = { "ngrok-skip-browser-warning": "1" };
+  // Cuando la app corre en la nube, el Monitor pide su token de acceso
+  if (process.env.MONITOR_TOKEN) cabeceras["x-monitor-token"] = process.env.MONITOR_TOKEN;
   return new Promise((resolve, reject) => {
-    const r = lib.get(monitorURL + rutaMonitor, { timeout: 8000 }, (resp) => {
+    const r = lib.get(monitorURL + rutaMonitor, { timeout: 8000, headers: cabeceras }, (resp) => {
       let cuerpo = "";
       resp.on("data", (c) => cuerpo += c);
       resp.on("end", () => { try { resolve(JSON.parse(cuerpo)); } catch (e) { reject(e); } });
