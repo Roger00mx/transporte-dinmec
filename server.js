@@ -117,6 +117,25 @@ if (!hayUnidades) {
 // ---------- Utilidades ----------
 const ahora = () => new Date().toISOString();
 const uid = () => crypto.randomUUID();
+
+// ---------- Zona horaria de la planta ----------
+// El servidor puede vivir en otro huso horario (ej. Render usa UTC).
+// Todas las fechas/horas capturadas son hora de México centro (UTC-6, sin horario de verano).
+const TZ_OFFSET = process.env.TZ_OFFSET || "-06:00";
+const TZ_MS = (() => {
+  const m = TZ_OFFSET.match(/^([+-])(\d{2}):(\d{2})$/);
+  if (!m) return -6 * 3600000;
+  return (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 3600000 + Number(m[3]) * 60000);
+})();
+// Convierte "fecha de la planta" + "hora de la planta" al instante real (ms)
+function msDePlanta(fecha, hora) {
+  return new Date(fecha + "T" + (hora || "00:00") + ":00" + TZ_OFFSET).getTime();
+}
+// La fecha de HOY según el reloj de la planta (no el del servidor)
+function hoyPlanta() {
+  const d = new Date(Date.now() + TZ_MS);
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+}
 const json = (res, code, obj) => {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(obj));
@@ -146,7 +165,7 @@ function ipsLocales() {
 
 // Folio consecutivo por año: TR-2026-001
 function nuevoFolio() {
-  const anio = new Date().getFullYear();
+  const anio = hoyPlanta().slice(0, 4);
   const pref = `TR-${anio}-`;
   const filas = db.prepare("SELECT folio FROM viajes WHERE folio LIKE ?").all(pref + "%");
   let max = 0;
@@ -443,7 +462,7 @@ const servidor = http.createServer(async (req, res) => {
 
     // ---- Reporte mensual de gasolina y kilómetros recorridos ----
     if (ruta === "/api/reporte-gasolina" && req.method === "GET") {
-      const mes = url.searchParams.get("mes") || ahora().slice(0, 7); // YYYY-MM
+      const mes = url.searchParams.get("mes") || hoyPlanta().slice(0, 7); // YYYY-MM (hora de la planta)
       const cargasMes = db.prepare("SELECT * FROM cargas WHERE fecha LIKE ? ORDER BY fecha, hora").all(mes + "%")
         .map((c) => { const { firma_operador, ...resto } = c; return resto; });
       // resumen por unidad
@@ -485,16 +504,15 @@ const servidor = http.createServer(async (req, res) => {
     if (mResumen && req.method === "GET") {
       const v = db.prepare("SELECT * FROM viajes WHERE id=?").get(mResumen[1]);
       if (!v) return json(res, 404, { error: "Registro no encontrado" });
-      const hoyStr = new Date().getFullYear() + "-" + String(new Date().getMonth() + 1).padStart(2, "0") + "-" + String(new Date().getDate()).padStart(2, "0");
-      const fechaFin = (v.estado === "finalizado" ? (v.fecha_regreso_real || v.fecha_salida) : hoyStr);
-      const iniMs = new Date(v.fecha_salida + "T" + (v.hora_salida || "00:00")).getTime();
+      const fechaFin = (v.estado === "finalizado" ? (v.fecha_regreso_real || v.fecha_salida) : hoyPlanta());
+      const iniMs = msDePlanta(v.fecha_salida, v.hora_salida || "00:00");
       const finMs = v.estado === "finalizado"
-        ? new Date(fechaFin + "T" + (v.hora_regreso || "23:59")).getTime()
+        ? msDePlanta(fechaFin, v.hora_regreso || "23:59")
         : Date.now();
 
       // Cargas de gasolina e incidentes de ESA unidad dentro de la ventana del viaje
       const enVentana = (fecha, hora) => {
-        const ms = new Date(fecha + "T" + (hora || "12:00")).getTime();
+        const ms = msDePlanta(fecha, hora || "12:00");
         return !isNaN(ms) && ms >= iniMs - 30 * 60000 && ms <= finMs + 30 * 60000;
       };
       const cargas = db.prepare("SELECT fecha,hora,lugar,tipo_pago,kilometraje,nivel_combustible,operador,id FROM cargas WHERE unidad=? AND fecha>=? AND fecha<=?")
@@ -566,10 +584,8 @@ const servidor = http.createServer(async (req, res) => {
       if (!esSupervisor(yo)) return json(res, 403, { error: "Solo el coordinador de transporte o el administrador pueden registrar salidas" });
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
       const id = uid();
-      const hoy = new Date();
-      const fechaHoy = hoy.getFullYear() + "-" + String(hoy.getMonth() + 1).padStart(2, "0") + "-" + String(hoy.getDate()).padStart(2, "0");
-      // La fecha de salida siempre es HOY; solo el administrador puede poner otra.
-      const fechaSalida = esAdmin(yo) && b.fecha_salida ? b.fecha_salida : fechaHoy;
+      // La fecha de salida siempre es HOY (hora de la planta); solo el administrador puede poner otra.
+      const fechaSalida = esAdmin(yo) && b.fecha_salida ? b.fecha_salida : hoyPlanta();
       db.prepare(`INSERT INTO viajes (id,folio,descripcion,solicitante,firma_solicitante,fecha_salida,hora_salida,
                   fecha_regreso,fecha_regreso_real,hora_regreso,unidad,operador,firma_operador,recibe_carga,firma_recibe,
                   llaves_entrega_por,llaves_recibe,firma_llaves_salida,llaves_devuelve_a,firma_llaves_regreso,
