@@ -259,12 +259,12 @@ function pintarFotos(){
       <div class="fotos-grid">
         ${propias.map(f=>`
           <div class="foto-item">
-            <img src="${f.url}" onclick="window.open('${f.url}','_blank')" style="cursor:zoom-in">
+            <img src="${f.url}" onclick="verFoto('${f.url}')" style="cursor:zoom-in">
             <button onclick="borrarFoto('${f.id}')" title="Eliminar foto">×</button>
           </div>`).join("")}
         ${espera.map((p,i)=>`
           <div class="foto-item">
-            <img src="${p.url}" title="Se subirá al guardar">
+            <img src="${p.url}" title="Se subirá al guardar" onclick="verFoto('${p.url}')" style="cursor:zoom-in">
             <button onclick="quitarPendiente('${cat.clave}',${i})" title="Quitar">×</button>
           </div>`).join("")}
         <label class="foto-add">📷<span>Agregar</span>

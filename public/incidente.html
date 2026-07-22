@@ -142,7 +142,7 @@ function pintarFotos(){
   const fotos=(INC&&INC.fotos)||[];
   cont.innerHTML = fotos.map(f=>`
     <div class="foto-item">
-      <img src="${f.url}" onclick="window.open('${f.url}','_blank')" style="cursor:zoom-in">
+      <img src="${f.url}" onclick="verFoto('${f.url}')" style="cursor:zoom-in">
       <button onclick="borrarFoto('${f.id}')" title="Eliminar foto">×</button>
     </div>`).join("") + `
     <label class="foto-add">📷<span>Agregar foto</span>

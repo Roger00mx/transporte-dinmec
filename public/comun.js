@@ -91,6 +91,31 @@ function crearFirma(caja) {
   };
 }
 
+// --- Visor de fotos: zoom en la misma pantalla, sin abrir otra pestaña ---
+function verFoto(url) {
+  let v = document.getElementById("visor-foto");
+  if (!v) {
+    v = document.createElement("div");
+    v.id = "visor-foto"; v.className = "visor-foto";
+    v.innerHTML = '<button class="cerrar" title="Cerrar">×</button><img alt="foto">';
+    document.body.appendChild(v);
+    const img = v.querySelector("img");
+    const cerrar = () => { v.style.display = "none"; img.classList.remove("zoom"); };
+    v.addEventListener("click", (e) => { if (e.target !== img) cerrar(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrar(); });
+    // Un toque/clic sobre la foto acerca justo donde tocaste; otro toque la regresa
+    img.addEventListener("click", (e) => {
+      const r = img.getBoundingClientRect();
+      img.style.transformOrigin = ((e.clientX - r.left) / r.width * 100) + "% " + ((e.clientY - r.top) / r.height * 100) + "%";
+      img.classList.toggle("zoom");
+    });
+  }
+  const img = v.querySelector("img");
+  img.classList.remove("zoom");
+  img.src = url;
+  v.style.display = "flex";
+}
+
 function escaparHTML(s) { return (s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function paramURL(n) { return new URL(location.href).searchParams.get(n); }
 

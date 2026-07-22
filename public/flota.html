@@ -152,7 +152,7 @@ function pintar(){
       const esPDF=/\.pdf$/i.test(d.url);
       return `<div class="doc-item">
         ${esPDF?`<a class="pdfic" href="${d.url}" target="_blank" title="${escaparHTML(d.nombre)}">📄</a>`
-               :`<img src="${d.url}" onclick="window.open('${d.url}','_blank')">`}
+               :`<img src="${d.url}" onclick="verFoto('${d.url}')" style="cursor:zoom-in">`}
         ${puedeEditar()?`<button onclick="borrarDoc('${d.id}')" title="Eliminar">×</button>`:""}
       </div>`;
     }).join("");

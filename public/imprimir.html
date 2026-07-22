@@ -83,11 +83,10 @@ function bloqueGastos(v){
   const gastos=parseJSON(v.gastos);
   const total=gastos.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
   const viat=parseFloat(v.viaticos_asignados)||0;
-  const emer=parseFloat(v.emergencias_asignadas)||0;
-  const entregado=viat+emer;
-  if(!gastos.length && !entregado) return "";
+  const inicial=parseFloat(v.emergencias_asignadas)||0;
+  if(!gastos.length && !inicial && !viat) return "";
   const filas=gastos.map(g=>`<tr><td>${escaparHTML(g.tipo||"")}</td><td>${escaparHTML(g.descripcion||"")}</td><td style="text-align:right">${dinero(g.monto)}</td></tr>`).join("");
-  const resta=entregado-total;
+  const resta=inicial-viat-total;
   return `<div class="bloque-tit">Gastos del viaje y corte de caja</div>
     <table style="width:100%;border-collapse:collapse;font-size:.88rem">
       <thead><tr><th style="text-align:left;border-bottom:2px solid var(--linea);padding:4px 6px">Tipo</th>
@@ -95,11 +94,10 @@ function bloqueGastos(v){
       <th style="text-align:right;border-bottom:2px solid var(--linea);padding:4px 6px">Monto</th></tr></thead>
       <tbody>${filas||`<tr><td colspan="3" style="padding:4px 6px;color:var(--gris)">Sin gastos registrados</td></tr>`}
       <tr><td colspan="2" style="padding:4px 6px;font-weight:700;border-top:1.5px solid var(--linea)">TOTAL DE GASTOS</td><td style="text-align:right;font-weight:700;padding:4px 6px;border-top:1.5px solid var(--linea)">${dinero(total)}</td></tr>
-      ${entregado?`
-      <tr><td colspan="2" style="padding:4px 6px;color:var(--gris)">Viáticos asignados</td><td style="text-align:right;padding:4px 6px;color:var(--gris)">${dinero(viat)}</td></tr>
-      <tr><td colspan="2" style="padding:4px 6px;color:var(--gris)">Fondo de emergencias</td><td style="text-align:right;padding:4px 6px;color:var(--gris)">${dinero(emer)}</td></tr>
-      <tr><td colspan="2" style="padding:4px 6px;font-weight:600">Total entregado</td><td style="text-align:right;font-weight:600;padding:4px 6px">${dinero(entregado)}</td></tr>
-      <tr><td colspan="2" style="padding:4px 6px;font-weight:700;border-top:1.5px solid var(--pri)">${resta>=0?"A DEVOLVER":"FALTANTE (se gastó de más)"}</td><td style="text-align:right;font-weight:700;padding:4px 6px;border-top:1.5px solid var(--pri)">${dinero(Math.abs(resta))}</td></tr>`:""}
+      <tr><td colspan="2" style="padding:4px 6px;color:var(--gris)">Monto inicial (emergencias)</td><td style="text-align:right;padding:4px 6px;color:var(--gris)">${dinero(inicial)}</td></tr>
+      <tr><td colspan="2" style="padding:4px 6px;color:var(--gris)">(−) Viáticos asignados</td><td style="text-align:right;padding:4px 6px;color:var(--gris)">${dinero(viat)}</td></tr>
+      <tr><td colspan="2" style="padding:4px 6px;color:var(--gris)">(−) Gastos del viaje</td><td style="text-align:right;padding:4px 6px;color:var(--gris)">${dinero(total)}</td></tr>
+      <tr><td colspan="2" style="padding:4px 6px;font-weight:700;border-top:1.5px solid var(--pri)">${resta>=0?"A DEVOLVER":"FALTANTE (se gastó de más)"}</td><td style="text-align:right;font-weight:700;padding:4px 6px;border-top:1.5px solid var(--pri)">${dinero(Math.abs(resta))}</td></tr>
       </tbody></table>`;
 }
 function bloqueTraficos(v){
@@ -135,8 +133,8 @@ async function cargarFicha(){
       <div><span>Entrega las llaves:</span> ${escaparHTML(v.llaves_entrega_por||"—")}</div>
       <div><span>Recibe las llaves:</span> ${escaparHTML(v.llaves_recibe||"—")}</div>
       <div><span>Kilometraje inicial:</span> ${v.km_inicial?Number(parseFloat(v.km_inicial)).toLocaleString()+" km":"—"}</div>
+      <div><span>Monto inicial (emergencias):</span> ${v.emergencias_asignadas?dinero(v.emergencias_asignadas):"—"}</div>
       <div><span>Viáticos asignados:</span> ${v.viaticos_asignados?dinero(v.viaticos_asignados):"—"}</div>
-      <div><span>Fondo de emergencias:</span> ${v.emergencias_asignadas?dinero(v.emergencias_asignadas):"—"}</div>
       <div><span>TAG entregado:</span> ${v.tag_digitos?("term. "+escaparHTML(v.tag_digitos)):"No"}</div>
       <div><span>TC asignada:</span> ${(v.tc_banco||v.tc_digitos)?(escaparHTML(v.tc_banco||"")+(v.tc_digitos?(" term. "+escaparHTML(v.tc_digitos)):"")):"No"}</div>
     </div>
