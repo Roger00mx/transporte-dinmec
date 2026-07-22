@@ -1,6 +1,6 @@
 // Service Worker — Control de Transporte DINMEC
 // Hace que la app cargue rápido e instalada. NO guarda datos ni fotos (esos siempre van a la red).
-const CACHE = "ct-cache-v4";
+const CACHE = "ct-cache-v5";
 const SHELL = [
   "/", "/index.html", "/viaje.html", "/login.html", "/usuarios.html", "/imprimir.html",
   "/gasolina.html", "/carga.html", "/incidentes.html", "/incidente.html",

@@ -73,6 +73,35 @@ function encabezado(sub){
     <div class="folio">${sub}</div>
   </div>`;
 }
+function parseJSON(s){ try{ const v=JSON.parse(s); return Array.isArray(v)?v:[]; }catch{ return []; } }
+function dinero(n){ const x=parseFloat(n); return isNaN(x)?"—":"$"+x.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function kmRecorridos(v){
+  const a=parseFloat(v.km_inicial), b=parseFloat(v.km_final);
+  return (!isNaN(a)&&!isNaN(b)&&b>=a)?((b-a).toLocaleString()+" km"):"—";
+}
+function bloqueGastos(v){
+  const gastos=parseJSON(v.gastos);
+  if(!gastos.length) return "";
+  const total=gastos.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  const viat=parseFloat(v.viaticos_asignados);
+  const filas=gastos.map(g=>`<tr><td>${escaparHTML(g.tipo||"")}</td><td>${escaparHTML(g.descripcion||"")}</td><td style="text-align:right">${dinero(g.monto)}</td></tr>`).join("");
+  return `<div class="bloque-tit">Gastos del viaje</div>
+    <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+      <thead><tr><th style="text-align:left;border-bottom:2px solid var(--linea);padding:4px 6px">Tipo</th>
+      <th style="text-align:left;border-bottom:2px solid var(--linea);padding:4px 6px">Descripción</th>
+      <th style="text-align:right;border-bottom:2px solid var(--linea);padding:4px 6px">Monto</th></tr></thead>
+      <tbody>${filas}
+      <tr><td colspan="2" style="padding:4px 6px;font-weight:700">TOTAL</td><td style="text-align:right;font-weight:700;padding:4px 6px">${dinero(total)}</td></tr>
+      ${!isNaN(viat)?`<tr><td colspan="2" style="padding:4px 6px;color:var(--gris)">Viáticos asignados</td><td style="text-align:right;padding:4px 6px;color:var(--gris)">${dinero(viat)}</td></tr>
+      <tr><td colspan="2" style="padding:4px 6px;font-weight:700">${viat-total>=0?"Restante":"Excedente"}</td><td style="text-align:right;font-weight:700;padding:4px 6px">${dinero(Math.abs(viat-total))}</td></tr>`:""}
+      </tbody></table>`;
+}
+function bloqueTraficos(v){
+  const ts=parseJSON(v.traficos);
+  if(!ts.length) return "";
+  return `<div class="bloque-tit">Tráfico / demoras registradas</div>
+    ${ts.map((t,i)=>`<div style="font-size:.9rem;margin:4px 0">🚦 ${i+1}. ${t.fecha?fechaBonita(t.fecha):""} ${escaparHTML(t.hora||"")} — ${escaparHTML(t.ubicacion||"")}</div>`).join("")}`;
+}
 function firma(img, nombre, rol){
   return `<div class="f">
     ${img?`<img src="${img}">`:`<div class="linea-vacia"></div>`}
@@ -99,6 +128,8 @@ async function cargarFicha(){
       <div><span>Operador:</span> ${escaparHTML(v.operador||"—")}</div>
       <div><span>Entrega las llaves:</span> ${escaparHTML(v.llaves_entrega_por||"—")}</div>
       <div><span>Recibe las llaves:</span> ${escaparHTML(v.llaves_recibe||"—")}</div>
+      <div><span>Kilometraje inicial:</span> ${v.km_inicial?Number(parseFloat(v.km_inicial)).toLocaleString()+" km":"—"}</div>
+      <div><span>Viáticos asignados:</span> ${v.viaticos_asignados?dinero(v.viaticos_asignados):"—"}</div>
     </div>
     <div class="bloque-tit">Regreso</div>
     <div class="datos">
@@ -106,7 +137,11 @@ async function cargarFicha(){
       <div><span>Hora de regreso:</span> ${escaparHTML(v.hora_regreso||"—")}</div>
       <div><span>Recibe la carga:</span> ${escaparHTML(v.recibe_carga||"—")}</div>
       <div><span>Llaves devueltas a:</span> ${escaparHTML(v.llaves_devuelve_a||"—")}</div>
+      <div><span>Kilometraje final:</span> ${v.km_final?Number(parseFloat(v.km_final)).toLocaleString()+" km":"—"}</div>
+      <div><span>Km recorridos:</span> ${kmRecorridos(v)}</div>
     </div>
+    ${bloqueGastos(v)}
+    ${bloqueTraficos(v)}
     ${v.observaciones?`<div class="obs"><b>Observaciones:</b> ${escaparHTML(v.observaciones)}</div>`:""}
     <div class="bloque-tit">Firmas</div>
     <div class="firmas">

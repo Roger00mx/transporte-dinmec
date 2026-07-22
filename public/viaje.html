@@ -61,6 +61,15 @@
         <input id="f-operador" list="lista-operadores" placeholder="Nombre del operador">
         <datalist id="lista-operadores"></datalist>
       </div>
+      <div class="campo">
+        <label>Kilometraje inicial (km)</label>
+        <input id="f-km_inicial" type="number" inputmode="numeric" min="0" placeholder="Km del tablero al salir" oninput="notaRecorrido()">
+      </div>
+      <div class="campo">
+        <label>Viáticos asignados ($)</label>
+        <input id="f-viaticos_asignados" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Ej. 1500" oninput="resumenViaticos()">
+        <span class="nota">Dinero entregado al operador para el viaje.</span>
+      </div>
     </div>
 
     <div class="verif" id="caja-firma-sol">
@@ -104,6 +113,11 @@
         </div>
       </div>
       <div class="campo">
+        <label>Kilometraje final (km)</label>
+        <input id="f-km_final" type="number" inputmode="numeric" min="0" placeholder="Km del tablero al regresar" oninput="notaRecorrido()">
+        <span class="nota" id="nota-km-rec"></span>
+      </div>
+      <div class="campo">
         <label>¿Quién recibe la carga? (si trae)</label>
         <input id="f-recibe_carga" placeholder="Nombre de quien recibe la carga">
       </div>
@@ -129,7 +143,24 @@
     </div>
   </div>
 
-  <!-- ============ SECCIÓN 3: EVIDENCIAS ============ -->
+  <!-- ============ SECCIÓN 3: GASTOS DEL VIAJE ============ -->
+  <div class="cabecera">
+    <h3>💰 Gastos del viaje <span style="font-weight:400;text-transform:none;font-size:.8rem;color:var(--gris)">(casetas, estacionamiento, hotel…)</span></h3>
+    <div id="lista-gastos"></div>
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn chico" id="btn-gasto">➕ Agregar gasto</button>
+      <span id="resumen-viaticos" style="font-weight:600;font-size:.9rem"></span>
+    </div>
+  </div>
+
+  <!-- ============ SECCIÓN 4: TRÁFICO / DEMORAS ============ -->
+  <div class="cabecera">
+    <h3>🚦 Tráfico o demoras en el camino <span style="font-weight:400;text-transform:none;font-size:.8rem;color:var(--gris)">(puedes registrar varias)</span></h3>
+    <div id="lista-traficos"></div>
+    <button class="btn chico" id="btn-trafico" style="margin-top:10px">➕ Registrar tráfico</button>
+  </div>
+
+  <!-- ============ SECCIÓN 5: EVIDENCIAS ============ -->
   <div class="cabecera" id="sec-fotos" style="display:none">
     <h3>📷 Evidencias (fotos)</h3>
     <div class="fotos-grid" id="fotos"></div>
@@ -146,6 +177,11 @@
 <script>
 let YO=null, ID=paramURL("id"), VIAJE=null;
 const FIRMAS={}; // { solicitante:{pad,valor,quien,cuando}, operador:{...}, recibe:{...} }
+let GASTOS=[];   // [{tipo, descripcion, monto}]
+let TRAFICOS=[]; // [{fecha, hora, ubicacion}]
+const TIPOS_GASTO=["Casetas","Estacionamiento","Hotel","Comida","Otro"];
+function parseJSON(s){ try{ const v=JSON.parse(s); return Array.isArray(v)?v:[]; }catch{ return []; } }
+function dinero(n){ const x=parseFloat(n); return isNaN(x)?"":"$"+x.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 const puedeSalida = () => YO.rol_app==="admin" || YO.rol_app==="supervisor";
 const esAdmin = () => YO.rol_app==="admin";
@@ -205,6 +241,16 @@ function pintar(){
   pon("f-operador", v.operador);
   pon("f-llaves_entrega_por", v.llaves_entrega_por ?? (puedeSalida()?YO.nombre:""));
   pon("f-llaves_recibe", v.llaves_recibe);
+  pon("f-km_inicial", v.km_inicial);
+  pon("f-viaticos_asignados", v.viaticos_asignados);
+  pon("f-km_final", v.km_final);
+  GASTOS=parseJSON(v.gastos);
+  TRAFICOS=parseJSON(v.traficos);
+  pintarGastos();
+  pintarTraficos();
+  notaRecorrido();
+  document.getElementById("btn-gasto").onclick=(e)=>{e.preventDefault();GASTOS.push({tipo:"Casetas",descripcion:"",monto:""});pintarGastos();};
+  document.getElementById("btn-trafico").onclick=(e)=>{e.preventDefault();TRAFICOS.push({fecha:fechaHoy(),hora:horaAhora(),ubicacion:""});pintarTraficos();};
   pon("f-fecha_regreso_real", v.fecha_regreso_real);
   pon("f-hora_regreso", v.hora_regreso);
   pon("f-recibe_carga", v.recibe_carga);
@@ -216,7 +262,7 @@ function pintar(){
   document.getElementById("f-fecha_salida").disabled = !esAdmin();
   if(esAdmin()) document.getElementById("nota-fecha").textContent="Como administrador puedes ajustar la fecha.";
   // Datos de salida: solo supervisor/admin
-  ["f-descripcion","f-solicitante","f-hora_salida","f-fecha_regreso","f-unidad","f-operador","f-llaves_entrega_por","f-llaves_recibe"].forEach(id=>{
+  ["f-descripcion","f-solicitante","f-hora_salida","f-fecha_regreso","f-unidad","f-operador","f-llaves_entrega_por","f-llaves_recibe","f-km_inicial","f-viaticos_asignados"].forEach(id=>{
     document.getElementById(id).disabled = !puedeSalida();
   });
 
@@ -246,6 +292,58 @@ function pintar(){
 
 function pon(id,valor){ document.getElementById(id).value = valor || ""; }
 function val(id){ return document.getElementById(id).value.trim(); }
+
+// ---- Kilómetros recorridos (se calcula solo) ----
+function notaRecorrido(){
+  const ini=parseFloat(val("f-km_inicial")), fin=parseFloat(val("f-km_final"));
+  const nota=document.getElementById("nota-km-rec");
+  if(!isNaN(ini)&&!isNaN(fin)&&fin>=ini) nota.textContent="Recorridos: "+(fin-ini).toLocaleString()+" km";
+  else if(!isNaN(fin)&&!isNaN(ini)&&fin<ini) nota.textContent="⚠️ El km final es menor al inicial ("+ini.toLocaleString()+")";
+  else nota.textContent="";
+}
+
+// ---- Gastos del viaje ----
+function pintarGastos(){
+  const cont=document.getElementById("lista-gastos");
+  cont.innerHTML=GASTOS.map((g,i)=>`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end">
+      <div class="campo" style="min-width:150px"><label>Tipo</label>
+        <select onchange="GASTOS[${i}].tipo=this.value">
+          ${TIPOS_GASTO.map(t=>`<option ${g.tipo===t?"selected":""}>${t}</option>`).join("")}
+        </select></div>
+      <div class="campo" style="flex:1;min-width:160px"><label>Descripción (opcional)</label>
+        <input value="${escaparHTML(g.descripcion||"")}" placeholder="Ej. caseta Amozoc" oninput="GASTOS[${i}].descripcion=this.value"></div>
+      <div class="campo" style="width:130px"><label>Monto ($)</label>
+        <input type="number" inputmode="decimal" min="0" step="0.01" value="${escaparHTML(g.monto||"")}" placeholder="0.00" oninput="GASTOS[${i}].monto=this.value;resumenViaticos()"></div>
+      <button class="btn chico peligro" title="Quitar" onclick="GASTOS.splice(${i},1);pintarGastos()">×</button>
+    </div>`).join("") || `<div class="nota" style="color:var(--gris);font-size:.85rem;margin-top:6px">Sin gastos registrados todavía.</div>`;
+  resumenViaticos();
+}
+function resumenViaticos(){
+  const total=GASTOS.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  const viaticos=parseFloat(val("f-viaticos_asignados"));
+  let txt = GASTOS.length ? ("Total de gastos: "+dinero(total)) : "";
+  if(!isNaN(viaticos)&&viaticos>0){
+    const resta=viaticos-total;
+    txt+=(txt?" · ":"")+"Viáticos: "+dinero(viaticos)+" · "+(resta>=0?("Restan: "+dinero(resta)):("⚠️ Excedido por "+dinero(-resta)));
+  }
+  document.getElementById("resumen-viaticos").textContent=txt;
+}
+
+// ---- Tráfico / demoras ----
+function pintarTraficos(){
+  const cont=document.getElementById("lista-traficos");
+  cont.innerHTML=TRAFICOS.map((t,i)=>`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end">
+      <div class="campo" style="width:150px"><label>Fecha</label>
+        <input type="date" value="${escaparHTML(t.fecha||"")}" onchange="TRAFICOS[${i}].fecha=this.value"></div>
+      <div class="campo" style="width:120px"><label>Hora</label>
+        <input type="time" value="${escaparHTML(t.hora||"")}" onchange="TRAFICOS[${i}].hora=this.value"></div>
+      <div class="campo" style="flex:1;min-width:180px"><label>Ubicación / lugar</label>
+        <input value="${escaparHTML(t.ubicacion||"")}" placeholder="Ej. autopista Puebla-México km 52" oninput="TRAFICOS[${i}].ubicacion=this.value"></div>
+      <button class="btn chico peligro" title="Quitar" onclick="TRAFICOS.splice(${i},1);pintarTraficos()">×</button>
+    </div>`).join("") || `<div class="nota" style="color:var(--gris);font-size:.85rem;margin-top:6px">Sin registros de tráfico. Si la unidad queda parada en tráfico, tócale ➕ y anota dónde.</div>`;
+}
 
 // ---- Firmas: si ya hay firma muestra la imagen; si no, canvas para firmar ----
 function montarFirma(contId, clave, dataURL, puedeFirmar){
@@ -294,6 +392,11 @@ function datosFormulario(){
     llaves_entrega_por: val("f-llaves_entrega_por"),
     llaves_recibe: val("f-llaves_recibe"),
     firma_llaves_salida: recogerFirma("llaves_salida"),
+    km_inicial: val("f-km_inicial"),
+    km_final: val("f-km_final"),
+    viaticos_asignados: val("f-viaticos_asignados"),
+    gastos: JSON.stringify(GASTOS.filter(g=>(g.monto||"").toString().trim()||(g.descripcion||"").trim())),
+    traficos: JSON.stringify(TRAFICOS.filter(t=>(t.ubicacion||"").trim()||t.hora)),
     fecha_regreso_real: val("f-fecha_regreso_real"),
     hora_regreso: val("f-hora_regreso"),
     recibe_carga: val("f-recibe_carga"),
@@ -327,6 +430,9 @@ async function guardar(){
 async function finalizar(){
   const d=datosFormulario();
   if(!d.hora_regreso){ aviso("Registra la hora de regreso antes de finalizar"); return; }
+  if(!d.km_final){
+    if(!confirm("No anotaste el kilometraje final. ¿Finalizar de todos modos?")) return;
+  }
   if(!d.fecha_regreso_real) d.fecha_regreso_real=fechaHoy();
   d.estado="finalizado";
   const r=await api.put("/api/viaje/"+ID, d);
