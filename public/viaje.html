@@ -70,6 +70,25 @@
         <input id="f-viaticos_asignados" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Ej. 1500" oninput="resumenViaticos()">
         <span class="nota">Dinero entregado al operador para el viaje.</span>
       </div>
+      <div class="campo">
+        <label>Cantidad para emergencias ($)</label>
+        <input id="f-emergencias_asignadas" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Ej. 1000" oninput="resumenViaticos()">
+        <span class="nota">Fondo extra por si algo pasa. Entra al corte de caja al finalizar.</span>
+      </div>
+      <div class="campo">
+        <label>TAG entregado (últimos 4 dígitos)</label>
+        <input id="f-tag_digitos" inputmode="numeric" maxlength="4" pattern="[0-9]*" placeholder="Ej. 4821">
+        <span class="nota">Déjalo vacío si no se entregó TAG.</span>
+      </div>
+      <div class="campo">
+        <label>TC asignada — Banco</label>
+        <input id="f-tc_banco" placeholder="Ej. BBVA">
+        <span class="nota">Déjalo vacío si no se asignó tarjeta.</span>
+      </div>
+      <div class="campo">
+        <label>TC — terminación (4 dígitos)</label>
+        <input id="f-tc_digitos" inputmode="numeric" maxlength="4" pattern="[0-9]*" placeholder="Ej. 7305">
+      </div>
     </div>
 
     <div class="verif" id="caja-firma-sol">
@@ -147,10 +166,10 @@
   <div class="cabecera">
     <h3>💰 Gastos del viaje <span style="font-weight:400;text-transform:none;font-size:.8rem;color:var(--gris)">(casetas, estacionamiento, hotel…)</span></h3>
     <div id="lista-gastos"></div>
-    <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div style="margin-top:10px">
       <button class="btn chico" id="btn-gasto">➕ Agregar gasto</button>
-      <span id="resumen-viaticos" style="font-weight:600;font-size:.9rem"></span>
     </div>
+    <div id="corte-caja" style="margin-top:12px"></div>
   </div>
 
   <!-- ============ SECCIÓN 4: TRÁFICO / DEMORAS ============ -->
@@ -243,6 +262,10 @@ function pintar(){
   pon("f-llaves_recibe", v.llaves_recibe);
   pon("f-km_inicial", v.km_inicial);
   pon("f-viaticos_asignados", v.viaticos_asignados);
+  pon("f-emergencias_asignadas", v.emergencias_asignadas);
+  pon("f-tag_digitos", v.tag_digitos);
+  pon("f-tc_banco", v.tc_banco);
+  pon("f-tc_digitos", v.tc_digitos);
   pon("f-km_final", v.km_final);
   GASTOS=parseJSON(v.gastos);
   TRAFICOS=parseJSON(v.traficos);
@@ -262,7 +285,7 @@ function pintar(){
   document.getElementById("f-fecha_salida").disabled = !esAdmin();
   if(esAdmin()) document.getElementById("nota-fecha").textContent="Como administrador puedes ajustar la fecha.";
   // Datos de salida: solo supervisor/admin
-  ["f-descripcion","f-solicitante","f-hora_salida","f-fecha_regreso","f-unidad","f-operador","f-llaves_entrega_por","f-llaves_recibe","f-km_inicial","f-viaticos_asignados"].forEach(id=>{
+  ["f-descripcion","f-solicitante","f-hora_salida","f-fecha_regreso","f-unidad","f-operador","f-llaves_entrega_por","f-llaves_recibe","f-km_inicial","f-viaticos_asignados","f-emergencias_asignadas","f-tag_digitos","f-tc_banco","f-tc_digitos"].forEach(id=>{
     document.getElementById(id).disabled = !puedeSalida();
   });
 
@@ -319,15 +342,26 @@ function pintarGastos(){
     </div>`).join("") || `<div class="nota" style="color:var(--gris);font-size:.85rem;margin-top:6px">Sin gastos registrados todavía.</div>`;
   resumenViaticos();
 }
+// ---- Corte de caja: (viáticos + emergencias) − gastos = a devolver ----
 function resumenViaticos(){
   const total=GASTOS.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
-  const viaticos=parseFloat(val("f-viaticos_asignados"));
-  let txt = GASTOS.length ? ("Total de gastos: "+dinero(total)) : "";
-  if(!isNaN(viaticos)&&viaticos>0){
-    const resta=viaticos-total;
-    txt+=(txt?" · ":"")+"Viáticos: "+dinero(viaticos)+" · "+(resta>=0?("Restan: "+dinero(resta)):("⚠️ Excedido por "+dinero(-resta)));
-  }
-  document.getElementById("resumen-viaticos").textContent=txt;
+  const viaticos=parseFloat(val("f-viaticos_asignados"))||0;
+  const emerg=parseFloat(val("f-emergencias_asignadas"))||0;
+  const entregado=viaticos+emerg;
+  const cont=document.getElementById("corte-caja");
+  if(!entregado && !total){ cont.innerHTML=""; return; }
+  const resta=entregado-total;
+  const fila=(et,v,extra)=>`<div style="display:flex;justify-content:space-between;gap:14px;${extra||""}"><span>${et}</span><b>${v}</b></div>`;
+  cont.innerHTML=`<div style="border:1.5px solid var(--linea);border-radius:10px;padding:12px 14px;max-width:380px;background:#fbfdfc;font-size:.92rem">
+    <div style="font-weight:700;color:var(--azul);margin-bottom:6px">🧾 Corte de caja</div>
+    ${fila("Viáticos asignados", dinero(viaticos))}
+    ${fila("Fondo de emergencias", dinero(emerg))}
+    ${fila("Total entregado", dinero(entregado), "border-top:1px solid var(--linea);padding-top:4px;margin-top:4px")}
+    ${fila("(−) Gastos del viaje", dinero(total))}
+    ${resta>=0
+      ? fila("= A devolver", dinero(resta), "border-top:1.5px solid var(--azul);padding-top:5px;margin-top:5px;color:var(--verde)")
+      : fila("= Faltante (se gastó de más)", dinero(-resta), "border-top:1.5px solid var(--azul);padding-top:5px;margin-top:5px;color:var(--rojo)")}
+  </div>`;
 }
 
 // ---- Tráfico / demoras ----
@@ -395,6 +429,10 @@ function datosFormulario(){
     km_inicial: val("f-km_inicial"),
     km_final: val("f-km_final"),
     viaticos_asignados: val("f-viaticos_asignados"),
+    emergencias_asignadas: val("f-emergencias_asignadas"),
+    tag_digitos: val("f-tag_digitos"),
+    tc_banco: val("f-tc_banco"),
+    tc_digitos: val("f-tc_digitos"),
     gastos: JSON.stringify(GASTOS.filter(g=>(g.monto||"").toString().trim()||(g.descripcion||"").trim())),
     traficos: JSON.stringify(TRAFICOS.filter(t=>(t.ubicacion||"").trim()||t.hora)),
     fecha_regreso_real: val("f-fecha_regreso_real"),
