@@ -64,6 +64,23 @@
     <input id="u-nombre" placeholder="Nombre de la nueva unidad (Ej. NP300)" style="flex:1;min-width:200px">
     <button class="btn primario" onclick="crearUnidad()">➕ Agregar unidad</button>
   </div>
+
+  <div class="seccion-tit" style="margin-top:34px"><h2>📱 Avisos de WhatsApp</h2></div>
+  <p style="color:var(--gris);font-size:.9rem;margin-top:0">
+    Cada vez que se registre una <b>nueva salida</b>, la app avisará por WhatsApp a estas personas.<br>
+    <b>Cómo activar un número (una sola vez, gratis):</b> desde ese WhatsApp se envía el mensaje
+    <i>"I allow callmebot to send me messages"</i> al número <b>+34 644 44 21 48</b>; el bot responde con su
+    <b>apikey</b> (un número). Ese apikey se captura aquí.
+  </p>
+  <table id="tabla-wa"><thead>
+    <tr><th>Nombre</th><th>Teléfono (con 521…)</th><th>Apikey</th><th style="width:150px"></th></tr>
+  </thead><tbody></tbody></table>
+  <div class="fila-nueva">
+    <input id="w-nombre" placeholder="Nombre (Ej. Rogelio)" style="width:160px">
+    <input id="w-phone" placeholder="Ej. 5212221234567" style="width:170px">
+    <input id="w-apikey" placeholder="Apikey de CallMeBot" style="width:170px">
+    <button class="btn primario" onclick="agregarWA()">➕ Agregar</button>
+  </div>
 </div>
 
 <script src="comun.js"></script>
@@ -72,7 +89,50 @@ let YO=null;
 async function inicio(){
   YO=await exigirSesion(); if(!YO) return;
   if(YO.rol_app!=="admin"){ aviso("Solo el administrador puede entrar aquí"); setTimeout(()=>location.href="index.html",1200); return; }
-  await Promise.all([cargarUsuarios(), cargarUnidades()]);
+  await Promise.all([cargarUsuarios(), cargarUnidades(), cargarWA()]);
+}
+
+// ---- Avisos de WhatsApp ----
+let NUMEROS_WA=[];
+async function cargarWA(){
+  const r=await api.get("/api/whatsapp");
+  NUMEROS_WA=r.numeros||[];
+  pintarWA();
+}
+function pintarWA(){
+  const tb=document.querySelector("#tabla-wa tbody");
+  tb.innerHTML=NUMEROS_WA.map((n,i)=>`<tr>
+    <td>${escaparHTML(n.nombre||"")}</td>
+    <td>${escaparHTML(n.phone)}</td>
+    <td>••••${escaparHTML((n.apikey||"").slice(-3))}</td>
+    <td style="white-space:nowrap;text-align:right">
+      <button class="btn chico fantasma" onclick="probarWA(${i})">📤 Probar</button>
+      <button class="btn chico peligro" onclick="quitarWA(${i})">🗑️</button>
+    </td></tr>`).join("") || `<tr><td colspan="4" style="color:var(--gris)">Sin números. Agrega el primero abajo.</td></tr>`;
+}
+async function guardarWA(){
+  const r=await api.put("/api/whatsapp",{numeros:NUMEROS_WA});
+  if(!r.ok) aviso(r.error||"No se pudo guardar");
+}
+async function agregarWA(){
+  const n={nombre:v("w-nombre"), phone:v("w-phone"), apikey:v("w-apikey")};
+  if(!n.phone||!n.apikey){ aviso("Faltan teléfono o apikey"); return; }
+  NUMEROS_WA.push(n);
+  await guardarWA();
+  ["w-nombre","w-phone","w-apikey"].forEach(i=>document.getElementById(i).value="");
+  pintarWA();
+  aviso("Número agregado ✅ Usa 📤 Probar para confirmar");
+}
+async function quitarWA(i){
+  if(!confirm("¿Quitar a "+(NUMEROS_WA[i].nombre||NUMEROS_WA[i].phone)+" de los avisos?")) return;
+  NUMEROS_WA.splice(i,1);
+  await guardarWA();
+  pintarWA();
+}
+async function probarWA(i){
+  aviso("Enviando prueba…");
+  const r=await api.post("/api/whatsapp/probar",{phone:NUMEROS_WA[i].phone,apikey:NUMEROS_WA[i].apikey});
+  aviso(r.ok?"✅ Mensaje de prueba enviado, revisa el WhatsApp":"❌ No llegó: "+(r.detalle||"revisa teléfono y apikey"));
 }
 
 async function cargarUsuarios(){

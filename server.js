@@ -83,7 +83,22 @@ db.exec(`
     token TEXT PRIMARY KEY,
     usuario_id TEXT, creado TEXT, expira TEXT
   );
+  CREATE TABLE IF NOT EXISTS config (
+    clave TEXT PRIMARY KEY,
+    valor TEXT
+  );
 `);
+
+// ---------- Configuración guardada (avisos de WhatsApp, etc.) ----------
+function leerConfig(clave, fallback) {
+  const r = db.prepare("SELECT valor FROM config WHERE clave=?").get(clave);
+  if (!r) return fallback;
+  try { return JSON.parse(r.valor); } catch { return fallback; }
+}
+function guardarConfig(clave, v) {
+  db.prepare("INSERT INTO config (clave,valor) VALUES (?,?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor")
+    .run(clave, JSON.stringify(v));
+}
 
 // ---- Migraciones: actualizan bases creadas con versiones anteriores, sin perder datos ----
 function colExiste(tabla, col) {
@@ -226,6 +241,37 @@ function hayUsuarios() {
 const esAdmin = (u) => u && u.rol_app === "admin";
 const esSupervisor = (u) => u && (u.rol_app === "admin" || u.rol_app === "supervisor");
 
+// ---------- Avisos por WhatsApp (CallMeBot, igual que el Monitor) ----------
+function enviarWhatsApp(phone, apikey, texto) {
+  return new Promise((resolve) => {
+    const u = "https://api.callmebot.com/whatsapp.php?phone=" + encodeURIComponent(phone) +
+      "&apikey=" + encodeURIComponent(apikey) + "&text=" + encodeURIComponent(texto);
+    const r = https.get(u, { timeout: 20000 }, (resp) => {
+      let cuerpo = "";
+      resp.on("data", (c) => cuerpo += c);
+      resp.on("end", () => resolve({ ok: resp.statusCode === 200 && !/ERROR|blocked|Invalid/i.test(cuerpo.slice(0, 500)), detalle: cuerpo.slice(0, 200) }));
+    });
+    r.on("error", (e) => resolve({ ok: false, detalle: e.message }));
+    r.on("timeout", () => { r.destroy(); resolve({ ok: false, detalle: "timeout" }); });
+  });
+}
+async function avisarNuevaSalida(v) {
+  const numeros = leerConfig("whatsapp_numeros", []);
+  for (const n of numeros) {
+    if (!n.phone || !n.apikey) continue;
+    const texto = "🚚 DINMEC - Nueva salida " + v.folio +
+      "\nUnidad: " + (v.unidad || "-") +
+      "\nOperador: " + (v.operador || "-") +
+      "\nActividad: " + (v.descripcion || "").slice(0, 150) +
+      "\nSalida: " + v.fecha_salida + " " + (v.hora_salida || "") +
+      "\nSolicitó: " + (v.solicitante || "-");
+    try {
+      const r = await enviarWhatsApp(n.phone, n.apikey, texto);
+      console.log("WhatsApp nueva salida a " + n.phone + ": " + (r.ok ? "enviado" : "FALLO " + r.detalle));
+    } catch (e) { console.log("WhatsApp error: " + e.message); }
+  }
+}
+
 // ---------- Sincronizacion en vivo (SSE) ----------
 const clientesSSE = new Set();
 function avisarCambio(refId, motivo) {
@@ -257,7 +303,7 @@ function obtenerIncidente(id) {
 // Campos que cada rol puede modificar en un viaje
 const CAMPOS_REGRESO = [
   "fecha_regreso_real", "hora_regreso", "recibe_carga", "firma_recibe", "firma_operador",
-  "llaves_devuelve_a", "firma_llaves_regreso", "km_final", "gastos", "traficos",
+  "llaves_devuelve_a", "firma_llaves_regreso", "km_inicial", "km_final", "gastos", "traficos",
   "observaciones", "estado",
 ];
 const CAMPOS_SUPERVISOR = [
@@ -389,6 +435,28 @@ const servidor = http.createServer(async (req, res) => {
         }
         return json(res, 200, { ok: true });
       }
+    }
+
+    // ---- Avisos de WhatsApp para nuevas salidas (solo admin) ----
+    if (ruta === "/api/whatsapp") {
+      if (!esAdmin(yo)) return json(res, 403, { error: "Solo administrador" });
+      if (req.method === "GET") {
+        return json(res, 200, { numeros: leerConfig("whatsapp_numeros", []) });
+      }
+      if (req.method === "PUT") {
+        const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+        const numeros = (Array.isArray(b.numeros) ? b.numeros : [])
+          .filter((n) => n.phone)
+          .map((n) => ({ nombre: String(n.nombre || ""), phone: String(n.phone).trim(), apikey: String(n.apikey || "").trim() }));
+        guardarConfig("whatsapp_numeros", numeros);
+        return json(res, 200, { ok: true });
+      }
+    }
+    if (ruta === "/api/whatsapp/probar" && req.method === "POST") {
+      if (!esAdmin(yo)) return json(res, 403, { error: "Solo administrador" });
+      const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+      const r = await enviarWhatsApp(b.phone, b.apikey, "✅ Prueba de Control de Transporte DINMEC: los avisos de nuevas salidas funcionan.");
+      return json(res, 200, r);
     }
 
     // ---- Respaldo de la base de datos (solo admin) ----
@@ -594,6 +662,7 @@ const servidor = http.createServer(async (req, res) => {
       if (!esSupervisor(yo)) return json(res, 403, { error: "Solo el coordinador de transporte o el administrador pueden registrar salidas" });
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
       const id = uid();
+      const folio = nuevoFolio();
       // La fecha de salida siempre es HOY (hora de la planta); solo el administrador puede poner otra.
       const fechaSalida = esAdmin(yo) && b.fecha_salida ? b.fecha_salida : hoyPlanta();
       db.prepare(`INSERT INTO viajes (id,folio,descripcion,solicitante,firma_solicitante,fecha_salida,hora_salida,
@@ -602,7 +671,7 @@ const servidor = http.createServer(async (req, res) => {
                   km_inicial,km_final,viaticos_asignados,emergencias_asignadas,tag_digitos,tc_banco,tc_digitos,gastos,traficos,
                   observaciones,estado,creado,creado_por,actualizado,actualizado_por)
                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-        id, nuevoFolio(), b.descripcion || "", b.solicitante || yo.nombre, b.firma_solicitante || "",
+        id, folio, b.descripcion || "", b.solicitante || yo.nombre, b.firma_solicitante || "",
         fechaSalida, b.hora_salida || "", b.fecha_regreso || "", "", "",
         b.unidad || "", b.operador || "", b.firma_operador || "", "", "",
         b.llaves_entrega_por || "", b.llaves_recibe || "", b.firma_llaves_salida || "", "", "",
@@ -611,6 +680,9 @@ const servidor = http.createServer(async (req, res) => {
         b.gastos || "", b.traficos || "",
         b.observaciones || "", "en_curso", ahora(), yo.nombre, ahora(), yo.nombre);
       avisarCambio(id, "nuevo");
+      // Aviso por WhatsApp (sin detener la respuesta)
+      avisarNuevaSalida({ folio, unidad: b.unidad, operador: b.operador, descripcion: b.descripcion,
+        fecha_salida: fechaSalida, hora_salida: b.hora_salida, solicitante: b.solicitante || yo.nombre }).catch(() => {});
       return json(res, 200, { id });
     }
 

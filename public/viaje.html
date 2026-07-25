@@ -104,7 +104,13 @@
       <div class="campos">
         <div class="campo">
           <label>¿Quién entrega las llaves?</label>
-          <input id="f-llaves_entrega_por" placeholder="Nombre de quien entrega">
+          <select id="f-llaves_entrega_sel" onchange="selPersona('entrega')">
+            <option value="">— Elige —</option>
+            <option>Natalia</option>
+            <option>Miriam</option>
+            <option value="__otro">Otro (escribir)…</option>
+          </select>
+          <input id="f-llaves_entrega_otro" placeholder="Nombre de quien entrega" style="display:none;margin-top:6px">
         </div>
         <div class="campo">
           <label>¿Quién recibe las llaves?</label>
@@ -154,7 +160,13 @@
       <div class="campos">
         <div class="campo">
           <label>¿A quién se devuelven las llaves?</label>
-          <input id="f-llaves_devuelve_a" placeholder="Nombre de quien recibe las llaves de vuelta">
+          <select id="f-llaves_devuelve_sel" onchange="selPersona('devuelve')">
+            <option value="">— Elige —</option>
+            <option>Natalia</option>
+            <option>Miriam</option>
+            <option value="__otro">Otro (escribir)…</option>
+          </select>
+          <input id="f-llaves_devuelve_otro" placeholder="Nombre de quien recibe las llaves" style="display:none;margin-top:6px">
         </div>
       </div>
       <div class="rol" style="margin-top:10px;font-size:.85rem">✍️ Firma de quien recibe las llaves al regreso</div>
@@ -199,7 +211,68 @@ const FIRMAS={}; // { solicitante:{pad,valor,quien,cuando}, operador:{...}, reci
 let GASTOS=[];   // [{tipo, descripcion, monto}]
 let TRAFICOS=[]; // [{fecha, hora, ubicacion}]
 const TIPOS_GASTO=["Casetas","Estacionamiento","Hotel","Comida","Otro"];
+const PERSONAS_LLAVES=["Natalia","Miriam"];
+
+// ---- Selector de persona (llaves): Natalia / Miriam / Otro ----
+function selPersona(cual){
+  const sel=document.getElementById("f-llaves_"+cual+"_sel");
+  const otro=document.getElementById("f-llaves_"+cual+"_otro");
+  otro.style.display = sel.value==="__otro" ? "block" : "none";
+  if(sel.value!=="__otro") otro.value="";
+}
+function ponPersona(cual, valor){
+  const sel=document.getElementById("f-llaves_"+cual+"_sel");
+  const otro=document.getElementById("f-llaves_"+cual+"_otro");
+  if(!valor){ sel.value=""; otro.value=""; otro.style.display="none"; }
+  else if(PERSONAS_LLAVES.includes(valor)){ sel.value=valor; otro.value=""; otro.style.display="none"; }
+  else { sel.value="__otro"; otro.value=valor; otro.style.display="block"; }
+}
+function valPersona(cual){
+  const sel=document.getElementById("f-llaves_"+cual+"_sel").value;
+  return sel==="__otro" ? document.getElementById("f-llaves_"+cual+"_otro").value.trim() : sel;
+}
 function parseJSON(s){ try{ const v=JSON.parse(s); return Array.isArray(v)?v:[]; }catch{ return []; } }
+
+// ---- GUARDADO AUTOMÁTICO ----
+// Con registro abierto: guarda solo 2 s después de cada cambio.
+// En salida nueva: guarda un borrador local para no perder lo capturado.
+let _autoT=null, _autoOcupado=false;
+function programarAutoguardado(){
+  if(!ID){
+    try{ localStorage.setItem("borrador-salida", JSON.stringify(datosFormulario())); }catch{}
+    return;
+  }
+  clearTimeout(_autoT);
+  _autoT=setTimeout(autoGuardar, 2000);
+}
+async function autoGuardar(){
+  if(!ID || _autoOcupado) return;
+  _autoOcupado=true;
+  try{
+    const r=await api.put("/api/viaje/"+ID, datosFormulario());
+    if(r.ok) document.getElementById("guardado").textContent="Guardado automático ✓ "+horaAhora();
+  }catch{}
+  _autoOcupado=false;
+}
+function restaurarBorrador(){
+  let b=null;
+  try{ b=JSON.parse(localStorage.getItem("borrador-salida")||"null"); }catch{}
+  if(!b || !(b.descripcion||b.unidad||b.operador||b.km_inicial)) return;
+  pon("f-descripcion",b.descripcion); if(b.solicitante) pon("f-solicitante",b.solicitante);
+  if(b.hora_salida) pon("f-hora_salida",b.hora_salida);
+  pon("f-fecha_regreso",b.fecha_regreso); pon("f-unidad",b.unidad); pon("f-operador",b.operador);
+  pon("f-km_inicial",b.km_inicial); pon("f-viaticos_asignados",b.viaticos_asignados);
+  pon("f-emergencias_asignadas",b.emergencias_asignadas); pon("f-tag_digitos",b.tag_digitos);
+  pon("f-tc_banco",b.tc_banco); pon("f-tc_digitos",b.tc_digitos);
+  pon("f-llaves_recibe",b.llaves_recibe);
+  ponPersona("entrega", b.llaves_entrega_por);
+  GASTOS=parseJSON(b.gastos); TRAFICOS=parseJSON(b.traficos);
+  pintarGastos(); pintarTraficos(); notaRecorrido();
+  if(b.firma_solicitante) montarFirma("firma-solicitante","solicitante",b.firma_solicitante,puedeSalida());
+  if(b.firma_operador) montarFirma("firma-operador","operador",b.firma_operador,true);
+  if(b.firma_llaves_salida) montarFirma("firma-llaves-salida","llaves_salida",b.firma_llaves_salida,puedeSalida());
+  aviso("Se recuperó lo que llevabas capturado ✍️");
+}
 function dinero(n){ const x=parseFloat(n); return isNaN(x)?"":"$"+x.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 const puedeSalida = () => YO.rol_app==="admin" || YO.rol_app==="supervisor";
@@ -226,7 +299,12 @@ async function inicio(){
     if(!puedeSalida()){ aviso("Solo el coordinador registra salidas"); setTimeout(()=>location.href="index.html",1200); return; }
   }
   pintar();
-  document.getElementById("cont").style.display="block";
+  if(!ID) restaurarBorrador();
+  // Guardado automático: cualquier cambio en el formulario lo dispara
+  const cont=document.getElementById("cont");
+  cont.addEventListener("input", programarAutoguardado);
+  cont.addEventListener("change", programarAutoguardado);
+  cont.style.display="block";
 }
 
 function pintar(){
@@ -258,7 +336,7 @@ function pintar(){
   pon("f-fecha_regreso", v.fecha_regreso);
   pon("f-unidad", v.unidad);
   pon("f-operador", v.operador);
-  pon("f-llaves_entrega_por", v.llaves_entrega_por ?? (puedeSalida()?YO.nombre:""));
+  ponPersona("entrega", v.llaves_entrega_por);
   pon("f-llaves_recibe", v.llaves_recibe);
   pon("f-km_inicial", v.km_inicial);
   pon("f-viaticos_asignados", v.viaticos_asignados);
@@ -277,7 +355,7 @@ function pintar(){
   pon("f-fecha_regreso_real", v.fecha_regreso_real);
   pon("f-hora_regreso", v.hora_regreso);
   pon("f-recibe_carga", v.recibe_carga);
-  pon("f-llaves_devuelve_a", v.llaves_devuelve_a);
+  ponPersona("devuelve", v.llaves_devuelve_a);
   pon("f-observaciones", v.observaciones);
 
   // ---- permisos ----
@@ -285,7 +363,8 @@ function pintar(){
   document.getElementById("f-fecha_salida").disabled = !esAdmin();
   if(esAdmin()) document.getElementById("nota-fecha").textContent="Como administrador puedes ajustar la fecha.";
   // Datos de salida: solo supervisor/admin
-  ["f-descripcion","f-solicitante","f-hora_salida","f-fecha_regreso","f-unidad","f-operador","f-llaves_entrega_por","f-llaves_recibe","f-km_inicial","f-viaticos_asignados","f-emergencias_asignadas","f-tag_digitos","f-tc_banco","f-tc_digitos"].forEach(id=>{
+  // (el KILOMETRAJE INICIAL lo puede capturar también el operador al salir)
+  ["f-descripcion","f-solicitante","f-hora_salida","f-fecha_regreso","f-unidad","f-operador","f-llaves_entrega_sel","f-llaves_entrega_otro","f-llaves_recibe","f-viaticos_asignados","f-emergencias_asignadas","f-tag_digitos","f-tc_banco","f-tc_digitos"].forEach(id=>{
     document.getElementById(id).disabled = !puedeSalida();
   });
 
@@ -338,7 +417,7 @@ function pintarGastos(){
         <input value="${escaparHTML(g.descripcion||"")}" placeholder="Ej. caseta Amozoc" oninput="GASTOS[${i}].descripcion=this.value"></div>
       <div class="campo" style="width:130px"><label>Monto ($)</label>
         <input type="number" inputmode="decimal" min="0" step="0.01" value="${escaparHTML(g.monto||"")}" placeholder="0.00" oninput="GASTOS[${i}].monto=this.value;resumenViaticos()"></div>
-      <button class="btn chico peligro" title="Quitar" onclick="GASTOS.splice(${i},1);pintarGastos()">×</button>
+      <button class="btn chico peligro" title="Quitar" onclick="GASTOS.splice(${i},1);pintarGastos();programarAutoguardado()">×</button>
     </div>`).join("") || `<div class="nota" style="color:var(--gris);font-size:.85rem;margin-top:6px">Sin gastos registrados todavía.</div>`;
   resumenViaticos();
 }
@@ -362,19 +441,57 @@ function resumenViaticos(){
   </div>`;
 }
 
-// ---- Tráfico / demoras ----
+// ---- Tráfico / demoras (con foto opcional) ----
 function pintarTraficos(){
+  // cada registro necesita un id fijo para ligarle sus fotos
+  TRAFICOS.forEach(t=>{ if(!t.id) t.id="t"+Math.random().toString(36).slice(2,10); });
+  const todasFotos=(VIAJE&&VIAJE.fotos)||[];
   const cont=document.getElementById("lista-traficos");
-  cont.innerHTML=TRAFICOS.map((t,i)=>`
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end">
-      <div class="campo" style="width:150px"><label>Fecha</label>
-        <input type="date" value="${escaparHTML(t.fecha||"")}" onchange="TRAFICOS[${i}].fecha=this.value"></div>
-      <div class="campo" style="width:120px"><label>Hora</label>
-        <input type="time" value="${escaparHTML(t.hora||"")}" onchange="TRAFICOS[${i}].hora=this.value"></div>
-      <div class="campo" style="flex:1;min-width:180px"><label>Ubicación / lugar</label>
-        <input value="${escaparHTML(t.ubicacion||"")}" placeholder="Ej. autopista Puebla-México km 52" oninput="TRAFICOS[${i}].ubicacion=this.value"></div>
-      <button class="btn chico peligro" title="Quitar" onclick="TRAFICOS.splice(${i},1);pintarTraficos()">×</button>
-    </div>`).join("") || `<div class="nota" style="color:var(--gris);font-size:.85rem;margin-top:6px">Sin registros de tráfico. Si la unidad queda parada en tráfico, tócale ➕ y anota dónde.</div>`;
+  cont.innerHTML=TRAFICOS.map((t,i)=>{
+    const fotosT=todasFotos.filter(f=>f.categoria==="trafico-"+t.id);
+    return `
+    <div style="border:1px solid var(--linea);border-radius:10px;padding:10px;margin-top:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="campo" style="width:150px"><label>Fecha</label>
+          <input type="date" value="${escaparHTML(t.fecha||"")}" onchange="TRAFICOS[${i}].fecha=this.value"></div>
+        <div class="campo" style="width:120px"><label>Hora</label>
+          <input type="time" value="${escaparHTML(t.hora||"")}" onchange="TRAFICOS[${i}].hora=this.value"></div>
+        <div class="campo" style="flex:1;min-width:180px"><label>Ubicación / lugar</label>
+          <input value="${escaparHTML(t.ubicacion||"")}" placeholder="Ej. autopista Puebla-México km 52" oninput="TRAFICOS[${i}].ubicacion=this.value"></div>
+        <button class="btn chico peligro" title="Quitar" onclick="TRAFICOS.splice(${i},1);pintarTraficos();programarAutoguardado()">×</button>
+      </div>
+      <div class="fotos-grid" style="margin-top:8px">
+        ${fotosT.map(f=>`
+          <div class="foto-item" style="width:74px;height:74px">
+            <img src="${f.url}" onclick="verFoto('${f.url}')" style="cursor:zoom-in">
+            <button onclick="borrarFotoTrafico('${f.id}')" title="Eliminar foto">×</button>
+          </div>`).join("")}
+        ${ID?`<label class="foto-add" style="width:74px;height:74px;font-size:.62rem;gap:1px">📷<span>Foto</span>
+          <input type="file" accept="image/*" capture="environment" multiple onchange="subirFotoTrafico(this.files,'${t.id}')">
+        </label>`:`<span class="nota" style="color:var(--gris);font-size:.75rem;align-self:center">Las fotos se pueden agregar después de guardar la salida.</span>`}
+      </div>
+    </div>`;
+  }).join("") || `<div class="nota" style="color:var(--gris);font-size:.85rem;margin-top:6px">Sin registros de tráfico. Si la unidad queda parada en tráfico, tócale ➕ y anota dónde (puedes agregar foto).</div>`;
+}
+async function subirFotoTrafico(files, tid){
+  // primero guardar el registro para no perder el renglón recién capturado
+  await api.put("/api/viaje/"+ID, { traficos: JSON.stringify(TRAFICOS) });
+  for(const file of files){
+    aviso("Subiendo foto…");
+    const blob=await comprimirImagen(file);
+    const r=await fetch("/api/viaje/"+ID+"/foto?categoria=trafico-"+tid+"&nombre="+encodeURIComponent(file.name.replace(/\.[^.]+$/,".jpg")),{method:"POST",body:blob});
+    const j=await r.json();
+    if(j.error){ aviso(j.error); return; }
+  }
+  aviso("Foto guardada ✅");
+  VIAJE=await api.get("/api/viaje/"+ID);
+  pintarTraficos();
+}
+async function borrarFotoTrafico(fid){
+  if(!confirm("¿Eliminar esta foto?")) return;
+  await api.del("/api/foto/"+fid);
+  VIAJE=await api.get("/api/viaje/"+ID);
+  pintarTraficos();
 }
 
 // ---- Firmas: si ya hay firma muestra la imagen; si no, canvas para firmar ----
@@ -399,6 +516,10 @@ function montarFirma(contId, clave, dataURL, puedeFirmar){
   </div>`;
   const pad=crearFirma(cont.querySelector(".firma-caja"));
   cont.querySelector("[data-limpiar]").onclick=(e)=>{e.preventDefault();pad.limpiar();};
+  // al terminar un trazo de firma también se guarda solo
+  const cv=cont.querySelector("canvas");
+  cv.addEventListener("mouseup", programarAutoguardado);
+  cv.addEventListener("touchend", programarAutoguardado);
   FIRMAS[clave].pad=pad;
 }
 function reFirmar(contId, clave){ FIRMAS[clave].valor=""; montarFirma(contId, clave, "", true); }
@@ -421,7 +542,7 @@ function datosFormulario(){
     unidad: val("f-unidad"),
     operador: val("f-operador"),
     firma_operador: recogerFirma("operador"),
-    llaves_entrega_por: val("f-llaves_entrega_por"),
+    llaves_entrega_por: valPersona("entrega"),
     llaves_recibe: val("f-llaves_recibe"),
     firma_llaves_salida: recogerFirma("llaves_salida"),
     km_inicial: val("f-km_inicial"),
@@ -437,7 +558,7 @@ function datosFormulario(){
     hora_regreso: val("f-hora_regreso"),
     recibe_carga: val("f-recibe_carga"),
     firma_recibe: recogerFirma("recibe"),
-    llaves_devuelve_a: val("f-llaves_devuelve_a"),
+    llaves_devuelve_a: valPersona("devuelve"),
     firma_llaves_regreso: recogerFirma("llaves_regreso"),
     observaciones: val("f-observaciones"),
   };
@@ -450,7 +571,11 @@ async function guardar(){
     if(!d.unidad){ aviso("Elige la unidad"); return; }
     if(!d.operador){ aviso("Escribe el nombre del operador"); return; }
     const r=await api.post("/api/viajes", d);
-    if(r.id){ aviso("Salida registrada ✅"); location.href="viaje.html?id="+r.id; }
+    if(r.id){
+      try{ localStorage.removeItem("borrador-salida"); }catch{}
+      aviso("Salida registrada ✅");
+      location.href="viaje.html?id="+r.id;
+    }
     else aviso(r.error||"No se pudo guardar");
     return;
   }
@@ -482,10 +607,10 @@ async function borrar(){
   if(r.ok){ location.href="index.html"; } else aviso(r.error||"No se pudo eliminar");
 }
 
-// ---- Fotos ----
+// ---- Fotos (evidencias generales; las de tráfico se ven en su sección) ----
 function pintarFotos(){
   const cont=document.getElementById("fotos");
-  const fotos=(VIAJE&&VIAJE.fotos)||[];
+  const fotos=((VIAJE&&VIAJE.fotos)||[]).filter(f=>!(f.categoria||"").startsWith("trafico-"));
   cont.innerHTML = fotos.map(f=>`
     <div class="foto-item">
       <img src="${f.url}" onclick="verFoto('${f.url}')" style="cursor:zoom-in">
