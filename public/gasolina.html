@@ -66,6 +66,7 @@ function pintar(){
       <div class="meta">📍 ${escaparHTML(c.lugar||"(sin lugar)")}</div>
       <div class="chips">
         <span class="chip">👷 ${escaparHTML(c.operador||"—")}${c.firmado?" ✓":""}</span>
+        ${c.costo?`<span class="chip">💲 $${Number(parseFloat(c.costo)).toLocaleString("es-MX",{minimumFractionDigits:2})}</span>`:""}
         ${c.kilometraje?`<span class="chip">🛣️ ${Number(parseFloat(c.kilometraje)).toLocaleString()} km</span>`:""}
         ${c.nivel_combustible?`<span class="chip">⛽ ${c.nivel_combustible==="lleno"?"Lleno":c.nivel_combustible==="reserva"?"Reserva":c.nivel_combustible}</span>`:""}
         <span class="chip">📷 ${c.num_fotos} foto${c.num_fotos===1?"":"s"}</span>

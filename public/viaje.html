@@ -409,35 +409,44 @@ function pintarGastos(){
   const cont=document.getElementById("lista-gastos");
   cont.innerHTML=GASTOS.map((g,i)=>`
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end">
-      <div class="campo" style="min-width:150px"><label>Tipo</label>
+      <div class="campo" style="min-width:140px"><label>Tipo</label>
         <select onchange="GASTOS[${i}].tipo=this.value">
           ${TIPOS_GASTO.map(t=>`<option ${g.tipo===t?"selected":""}>${t}</option>`).join("")}
         </select></div>
-      <div class="campo" style="flex:1;min-width:160px"><label>Descripción (opcional)</label>
+      <div class="campo" style="flex:1;min-width:150px"><label>Descripción (opcional)</label>
         <input value="${escaparHTML(g.descripcion||"")}" placeholder="Ej. caseta Amozoc" oninput="GASTOS[${i}].descripcion=this.value"></div>
-      <div class="campo" style="width:130px"><label>Monto ($)</label>
+      <div class="campo" style="width:120px"><label>Monto ($)</label>
         <input type="number" inputmode="decimal" min="0" step="0.01" value="${escaparHTML(g.monto||"")}" placeholder="0.00" oninput="GASTOS[${i}].monto=this.value;resumenViaticos()"></div>
+      <div class="campo" style="width:120px"><label>Pagado con</label>
+        <select onchange="GASTOS[${i}].pago=this.value;resumenViaticos()">
+          ${["Efectivo","TAG","Tarjeta"].map(p=>`<option ${(g.pago||"Efectivo")===p?"selected":""}>${p}</option>`).join("")}
+        </select></div>
       <button class="btn chico peligro" title="Quitar" onclick="GASTOS.splice(${i},1);pintarGastos();programarAutoguardado()">×</button>
     </div>`).join("") || `<div class="nota" style="color:var(--gris);font-size:.85rem;margin-top:6px">Sin gastos registrados todavía.</div>`;
   resumenViaticos();
 }
-// ---- Corte de caja: monto inicial (emergencias) − viáticos − gastos = a devolver ----
+// ---- Corte de caja: monto inicial (emergencias) − viáticos − gastos EN EFECTIVO = a devolver ----
+// Lo pagado con TAG o tarjeta no sale del efectivo, por eso se muestra aparte.
 function resumenViaticos(){
-  const total=GASTOS.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  const efectivo=GASTOS.filter(g=>(g.pago||"Efectivo")==="Efectivo").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  const tagTarjeta=GASTOS.filter(g=>(g.pago||"Efectivo")!=="Efectivo").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  const casetas=GASTOS.filter(g=>g.tipo==="Casetas").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
   const viaticos=parseFloat(val("f-viaticos_asignados"))||0;
   const inicial=parseFloat(val("f-emergencias_asignadas"))||0;
   const cont=document.getElementById("corte-caja");
-  if(!inicial && !viaticos && !total){ cont.innerHTML=""; return; }
-  const resta=inicial-viaticos-total;
+  if(!inicial && !viaticos && !efectivo && !tagTarjeta){ cont.innerHTML=""; return; }
+  const resta=inicial-viaticos-efectivo;
   const fila=(et,v,extra)=>`<div style="display:flex;justify-content:space-between;gap:14px;${extra||""}"><span>${et}</span><b>${v}</b></div>`;
-  cont.innerHTML=`<div style="border:1.5px solid var(--linea);border-radius:10px;padding:12px 14px;max-width:380px;background:#fbfdfc;font-size:.92rem">
+  cont.innerHTML=`<div style="border:1.5px solid var(--linea);border-radius:10px;padding:12px 14px;max-width:400px;background:#fbfdfc;font-size:.92rem">
     <div style="font-weight:700;color:var(--azul);margin-bottom:6px">🧾 Corte de caja</div>
     ${fila("Monto inicial (emergencias)", dinero(inicial))}
     ${fila("(−) Viáticos", dinero(viaticos))}
-    ${fila("(−) Gastos del viaje", dinero(total))}
+    ${fila("(−) Gastos en efectivo", dinero(efectivo))}
     ${resta>=0
       ? fila("= A devolver", dinero(resta), "border-top:1.5px solid var(--azul);padding-top:5px;margin-top:5px;color:var(--verde)")
       : fila("= Faltante (se gastó de más)", dinero(-resta), "border-top:1.5px solid var(--azul);padding-top:5px;margin-top:5px;color:var(--rojo)")}
+    ${tagTarjeta?fila("Pagado con TAG/tarjeta (no sale del efectivo)", dinero(tagTarjeta), "margin-top:6px;color:var(--gris);font-size:.85rem"):""}
+    ${casetas?fila("🛣️ Total casetas (peaje)", dinero(casetas), "color:var(--gris);font-size:.85rem"):""}
   </div>`;
 }
 

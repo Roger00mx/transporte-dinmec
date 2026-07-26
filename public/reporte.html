@@ -48,6 +48,7 @@
 <script src="comun.js"></script>
 <script>
 const MESES=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+function money(n){ const x=parseFloat(n); return isNaN(x)?"—":"$"+x.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 async function cargar(){
   const mes=document.getElementById("f-mes").value;
@@ -68,11 +69,11 @@ async function cargar(){
   html+=`<h1>Resumen por unidad</h1>
   <table><thead><tr>
     <th>Unidad</th><th class="num">Cargas</th><th class="num">💵 Efectivo</th><th class="num">💳 Tarjeta</th>
-    <th class="num">Km inicio</th><th class="num">Km fin</th><th class="num">Km recorridos</th>
+    <th class="num">Km inicio</th><th class="num">Km fin</th><th class="num">Km recorridos</th><th class="num">Gastado ($)</th>
   </tr></thead><tbody>`;
-  let totC=0,totKm=0;
+  let totC=0,totKm=0,totGasto=0;
   for(const r of d.resumen){
-    totC+=r.cargas; if(r.km_recorridos) totKm+=r.km_recorridos;
+    totC+=r.cargas; if(r.km_recorridos) totKm+=r.km_recorridos; if(r.costo_total) totGasto+=r.costo_total;
     html+=`<tr>
       <td>🚛 ${escaparHTML(r.unidad)}</td>
       <td class="num">${r.cargas}</td>
@@ -81,16 +82,17 @@ async function cargar(){
       <td class="num">${r.km_inicio!==null?Number(r.km_inicio).toLocaleString():"—"}</td>
       <td class="num">${r.km_fin!==null?Number(r.km_fin).toLocaleString():"—"}</td>
       <td class="num"><b>${r.km_recorridos!==null?Number(r.km_recorridos).toLocaleString():"—"}</b></td>
+      <td class="num"><b>${r.costo_total?money(r.costo_total):"—"}</b></td>
     </tr>`;
   }
-  html+=`<tr class="tot"><td>TOTAL</td><td class="num">${totC}</td><td colspan="4"></td><td class="num">${totKm?totKm.toLocaleString():"—"}</td></tr>`;
+  html+=`<tr class="tot"><td>TOTAL</td><td class="num">${totC}</td><td colspan="4"></td><td class="num">${totKm?totKm.toLocaleString():"—"}</td><td class="num">${totGasto?money(totGasto):"—"}</td></tr>`;
   html+=`</tbody></table>
   <div class="nota">Los km recorridos se calculan con la última lectura del mes anterior (si existe) y la última del mes. Registra el kilometraje en cada carga para que el cálculo sea exacto.</div>`;
 
   // ---- detalle de cargas ----
   html+=`<h1>Detalle de cargas (${d.cargas.length})</h1>
   <table><thead><tr>
-    <th>Fecha</th><th>Hora</th><th>Unidad</th><th>Lugar</th><th>Pago</th><th class="num">Kilometraje</th><th>Nivel</th><th>Operador</th><th>Obs.</th>
+    <th>Fecha</th><th>Hora</th><th>Unidad</th><th>Lugar</th><th>Pago</th><th class="num">Kilometraje</th><th>Nivel</th><th class="num">Costo ($)</th><th>Operador</th><th>Obs.</th>
   </tr></thead><tbody>`;
   for(const c of d.cargas){
     html+=`<tr>
@@ -101,6 +103,7 @@ async function cargar(){
       <td>${c.tipo_pago==="tarjeta"?"💳 Tarjeta":c.tipo_pago==="efectivo"?"💵 Efectivo":""}</td>
       <td class="num">${c.kilometraje?Number(parseFloat(c.kilometraje)).toLocaleString():"—"}</td>
       <td>${c.nivel_combustible==="lleno"?"Lleno":c.nivel_combustible==="reserva"?"Reserva":escaparHTML(c.nivel_combustible||"—")}</td>
+      <td class="num">${c.costo?money(c.costo):"—"}</td>
       <td>${escaparHTML(c.operador||"")}</td>
       <td>${escaparHTML(c.observaciones||"")}</td>
     </tr>`;

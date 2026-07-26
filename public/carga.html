@@ -70,6 +70,11 @@
         </select>
       </div>
       <div class="campo">
+        <label>Costo de la carga ($)</label>
+        <input id="f-costo" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Monto del ticket, ej. 1250.00">
+        <span class="nota">El monto tal como aparece en el ticket.</span>
+      </div>
+      <div class="campo">
         <label>Operador</label>
         <input id="f-operador" placeholder="Nombre del operador">
       </div>
@@ -139,6 +144,7 @@ function pintar(){
   pon("f-tipo_pago", c.tipo_pago);
   pon("f-kilometraje", c.kilometraje);
   pon("f-nivel_combustible", c.nivel_combustible);
+  pon("f-costo", c.costo);
   pon("f-operador", c.operador ?? YO.nombre);
   pistaKm();
   pon("f-observaciones", c.observaciones);
@@ -203,6 +209,7 @@ function datosFormulario(){
     lugar: val("f-lugar"), tipo_pago: val("f-tipo_pago"),
     kilometraje: val("f-kilometraje"),
     nivel_combustible: val("f-nivel_combustible"),
+    costo: val("f-costo"),
     operador: val("f-operador"), firma_operador: recogerFirma("operador"),
     observaciones: val("f-observaciones"),
   };
@@ -214,6 +221,9 @@ async function guardar(){
   if(!d.lugar){ aviso("Escribe dónde se hizo la carga"); return; }
   if(!d.tipo_pago){ aviso("Elige el tipo de pago"); return; }
   if(!d.kilometraje){ aviso("Anota el kilometraje de la unidad"); return; }
+  if(!d.costo && !ID){
+    if(!confirm("No anotaste el costo de la carga ($). ¿Guardar de todos modos?")) return;
+  }
   const u=FLOTA.find(f=>f.nombre===d.unidad);
   if(u && u.ultimo_km!==null && parseFloat(d.kilometraje) < u.ultimo_km && !ID){
     if(!confirm("El kilometraje ("+d.kilometraje+") es MENOR a la última lectura ("+u.ultimo_km+" km). ¿Seguro que es correcto?")) return;

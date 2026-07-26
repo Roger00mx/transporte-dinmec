@@ -121,9 +121,10 @@ for (const col of ["km_inicial", "km_final", "viaticos_asignados", "gastos", "tr
 for (const col of ["emergencias_asignadas", "tag_digitos", "tc_banco", "tc_digitos"]) {
   if (!colExiste("viajes", col)) db.exec(`ALTER TABLE viajes ADD COLUMN ${col} TEXT DEFAULT ''`);
 }
-// Kilometraje y nivel de combustible en cargas de gasolina
+// Kilometraje, nivel de combustible y costo en cargas de gasolina
 if (!colExiste("cargas", "kilometraje")) db.exec("ALTER TABLE cargas ADD COLUMN kilometraje TEXT DEFAULT ''");
 if (!colExiste("cargas", "nivel_combustible")) db.exec("ALTER TABLE cargas ADD COLUMN nivel_combustible TEXT DEFAULT ''");
+if (!colExiste("cargas", "costo")) db.exec("ALTER TABLE cargas ADD COLUMN costo TEXT DEFAULT ''");
 // Ficha de flota por unidad: servicio, verificación vehicular, póliza de seguro y GPS vinculado
 for (const col of ["servicio_km", "servicio_fecha", "verif_ultima", "verif_vence", "poliza_aseguradora", "poliza_numero", "poliza_vence", "gps_imei"]) {
   if (!colExiste("unidades", col)) db.exec(`ALTER TABLE unidades ADD COLUMN ${col} TEXT DEFAULT ''`);
@@ -340,7 +341,7 @@ const CAMPOS_SUPERVISOR = [
 ];
 const CAMPOS_ADMIN = ["fecha_salida", ...CAMPOS_SUPERVISOR];
 
-const CAMPOS_CARGA = ["fecha", "hora", "unidad", "lugar", "tipo_pago", "kilometraje", "nivel_combustible", "operador", "firma_operador", "observaciones"];
+const CAMPOS_CARGA = ["fecha", "hora", "unidad", "lugar", "tipo_pago", "kilometraje", "nivel_combustible", "costo", "operador", "firma_operador", "observaciones"];
 const CAMPOS_UNIDAD = ["servicio_km", "servicio_fecha", "verif_ultima", "verif_vence", "poliza_aseguradora", "poliza_numero", "poliza_vence", "gps_imei"];
 const SERVICIO_CADA_KM = 10000;
 
@@ -583,12 +584,14 @@ const servidor = http.createServer(async (req, res) => {
       const porUnidad = {};
       for (const c of cargasMes) {
         const u = c.unidad || "(sin unidad)";
-        porUnidad[u] = porUnidad[u] || { unidad: u, cargas: 0, efectivo: 0, tarjeta: 0, kms: [] };
+        porUnidad[u] = porUnidad[u] || { unidad: u, cargas: 0, efectivo: 0, tarjeta: 0, kms: [], costo_total: 0 };
         porUnidad[u].cargas++;
         if (c.tipo_pago === "efectivo") porUnidad[u].efectivo++;
         if (c.tipo_pago === "tarjeta") porUnidad[u].tarjeta++;
         const n = parseFloat(c.kilometraje);
         if (!isNaN(n)) porUnidad[u].kms.push(n);
+        const $ = parseFloat(c.costo);
+        if (!isNaN($)) porUnidad[u].costo_total += $;
       }
       const resumen = Object.values(porUnidad).map((r) => {
         // punto de partida: última lectura ANTES del mes (si existe) para no perder el primer tramo
@@ -598,7 +601,7 @@ const servidor = http.createServer(async (req, res) => {
         let base = previa !== undefined ? previa : (r.kms.length ? Math.min(...r.kms) : null);
         let recorridos = (kmFin !== null && base !== null && kmFin >= base) ? kmFin - base : null;
         return { unidad: r.unidad, cargas: r.cargas, efectivo: r.efectivo, tarjeta: r.tarjeta,
-                 km_inicio: base, km_fin: kmFin, km_recorridos: recorridos };
+                 km_inicio: base, km_fin: kmFin, km_recorridos: recorridos, costo_total: Math.round(r.costo_total * 100) / 100 };
       });
       return json(res, 200, { mes, cargas: cargasMes, resumen });
     }
@@ -629,7 +632,7 @@ const servidor = http.createServer(async (req, res) => {
         const ms = msDePlanta(fecha, hora || "12:00");
         return !isNaN(ms) && ms >= iniMs - 30 * 60000 && ms <= finMs + 30 * 60000;
       };
-      const cargas = db.prepare("SELECT fecha,hora,lugar,tipo_pago,kilometraje,nivel_combustible,operador,id FROM cargas WHERE unidad=? AND fecha>=? AND fecha<=?")
+      const cargas = db.prepare("SELECT fecha,hora,lugar,tipo_pago,kilometraje,nivel_combustible,costo,operador,id FROM cargas WHERE unidad=? AND fecha>=? AND fecha<=?")
         .all(v.unidad, v.fecha_salida, fechaFin).filter((c) => enVentana(c.fecha, c.hora));
       const incidentes = db.prepare("SELECT fecha,hora,descripcion,reporta,id FROM incidentes WHERE unidad=? AND fecha>=? AND fecha<=?")
         .all(v.unidad, v.fecha_salida, fechaFin).filter((i) => enVentana(i.fecha, i.hora));
@@ -769,10 +772,10 @@ const servidor = http.createServer(async (req, res) => {
     if (ruta === "/api/cargas" && req.method === "POST") {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
       const id = uid();
-      db.prepare(`INSERT INTO cargas (id,fecha,hora,unidad,lugar,tipo_pago,kilometraje,nivel_combustible,operador,firma_operador,observaciones,creado,creado_por,actualizado,actualizado_por)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      db.prepare(`INSERT INTO cargas (id,fecha,hora,unidad,lugar,tipo_pago,kilometraje,nivel_combustible,costo,operador,firma_operador,observaciones,creado,creado_por,actualizado,actualizado_por)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         id, b.fecha || "", b.hora || "", b.unidad || "", b.lugar || "", b.tipo_pago || "", String(b.kilometraje || ""), b.nivel_combustible || "",
-        b.operador || yo.nombre, b.firma_operador || "", b.observaciones || "", ahora(), yo.nombre, ahora(), yo.nombre);
+        String(b.costo || ""), b.operador || yo.nombre, b.firma_operador || "", b.observaciones || "", ahora(), yo.nombre, ahora(), yo.nombre);
       avisarCambio(id, "carga");
       return json(res, 200, { id });
     }

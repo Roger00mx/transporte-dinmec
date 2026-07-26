@@ -66,6 +66,8 @@
 <script>
 const ID=paramURL("id");
 
+function parseJSON(s){ try{ const v=JSON.parse(s); return Array.isArray(v)?v:[]; }catch{ return []; } }
+function dinero(n){ const x=parseFloat(n); return isNaN(x)?"":"$"+x.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function horaDe(ms){ return new Date(ms).toLocaleTimeString("es-MX",{hour:"2-digit",minute:"2-digit"}); }
 function fechaHoraDe(ms){ return new Date(ms).toLocaleDateString("es-MX",{day:"numeric",month:"short"})+" "+horaDe(ms); }
 function dur(ms){ const m=Math.round(ms/60000); return m<60? m+" min" : Math.floor(m/60)+" h "+(m%60)+" min"; }
@@ -96,8 +98,27 @@ async function inicio(){
     stats.push({v:d.gps.paradas.length,e:"Paradas"});
   }
   stats.push({v:d.cargas.length,e:"Cargas de gasolina"});
+  // 💰 dinero del viaje: gasolina y casetas (peaje)
+  const gastoGas=d.cargas.reduce((s,c)=>s+(parseFloat(c.costo)||0),0);
+  if(gastoGas) stats.push({v:dinero(gastoGas),e:"Gastado en gasolina"});
+  const gastosViaje=parseJSON(d.viaje.gastos);
+  const casetas=gastosViaje.filter(g=>g.tipo==="Casetas");
+  const casetasTotal=casetas.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  if(casetasTotal) stats.push({v:dinero(casetasTotal),e:"Casetas (peaje)"});
   stats.push({v:d.incidentes.length,e:"Incidentes"});
   document.getElementById("stats").innerHTML=stats.map(s=>`<div class="stat"><div class="v">${s.v}</div><div class="e">${s.e}</div></div>`).join("");
+  // desglose del peaje por forma de pago
+  if(casetasTotal){
+    const tag=casetas.filter(g=>(g.pago||"Efectivo")==="TAG").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+    const tarjeta=casetas.filter(g=>(g.pago||"Efectivo")==="Tarjeta").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+    const efec=casetasTotal-tag-tarjeta;
+    const partes=[];
+    if(tag) partes.push("🏷️ TAG: "+dinero(tag));
+    if(tarjeta) partes.push("💳 Tarjeta: "+dinero(tarjeta));
+    if(efec) partes.push("💵 Efectivo: "+dinero(efec));
+    if(partes.length>1) document.getElementById("stats").insertAdjacentHTML("afterend",
+      `<div style="margin-top:8px;font-size:.88rem;color:var(--gris)">🛣️ Desglose del peaje — ${partes.join(" · ")}</div>`);
+  }
 
   // ---- mapa de ruta ----
   if(d.gps.ok && d.gps.ruta_mapa.length>1){
@@ -141,6 +162,7 @@ async function inicio(){
     <div class="lista-item" style="cursor:pointer" onclick="location.href='carga.html?id=${c.id}'">
       <div class="cabeza">⛽ ${fechaBonita(c.fecha)} ${c.hora||""} · ${escaparHTML(c.lugar||"")}</div>
       <div class="sub">${c.tipo_pago==="tarjeta"?"💳 Tarjeta":"💵 Efectivo"}
+        ${c.costo?("· 💲 "+dinero(c.costo)):""}
         ${c.kilometraje?("· 🛣️ "+Number(parseFloat(c.kilometraje)).toLocaleString()+" km"):""}
         ${c.nivel_combustible?("· Nivel: "+(c.nivel_combustible==="lleno"?"Lleno":c.nivel_combustible)):""}
         · ${escaparHTML(c.operador||"")}</div>
