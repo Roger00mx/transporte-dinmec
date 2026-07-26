@@ -66,11 +66,27 @@
   </div>
 
   <div class="seccion-tit" style="margin-top:34px"><h2>📱 Avisos de WhatsApp</h2></div>
-  <p style="color:var(--gris);font-size:.9rem;margin-top:0">
-    Cada vez que se registre una <b>nueva salida</b>, la app avisará por WhatsApp a estas personas.<br>
-    <b>Cómo activar un número (una sola vez, gratis):</b> desde ese WhatsApp se envía el mensaje
-    <i>"I allow callmebot to send me messages"</i> al número <b>+34 644 44 21 48</b>; el bot responde con su
-    <b>apikey</b> (un número). Ese apikey se captura aquí.
+
+  <div class="cabecera">
+    <h3>🔗 Opción 1: por n8n (recomendada si ya tienes n8n con WhatsApp)</h3>
+    <p style="color:var(--gris);font-size:.88rem;margin:4px 0 10px">
+      Pega aquí la dirección del <b>Webhook</b> de tu flujo de n8n. En cada nueva salida, la app le enviará los
+      datos y n8n manda el WhatsApp con su número vinculado a quien tú definas en el flujo.
+    </p>
+    <div class="fila-nueva">
+      <input id="w-webhook" placeholder="https://tu-n8n.com/webhook/nueva-salida" style="flex:1;min-width:260px">
+      <button class="btn primario" onclick="guardarWebhook()">💾 Guardar</button>
+      <button class="btn fantasma" onclick="probarWebhook()">📤 Probar</button>
+    </div>
+  </div>
+
+  <p style="color:var(--gris);font-size:.9rem;margin-top:16px">
+    <b>Opción 2: CallMeBot</b> — avisará por WhatsApp a estas personas (cada una activa su número una vez).<br>
+    <b>Cómo activar un número (una sola vez, gratis):</b><br>
+    1. En el teléfono de esa persona, <b>guardar en contactos</b> el número <b>+34 644 78 33 97</b> (con cualquier nombre, ej. "CallMeBot").<br>
+    2. Desde su WhatsApp, enviarle a ese contacto el mensaje: <i>I allow callmebot to send me messages</i><br>
+    3. En 1-2 minutos el bot contesta: "API Activated… Your APIKEY is <b>123456</b>". Ese número es el <b>apikey</b> que se captura aquí.<br>
+    <span style="font-size:.82rem">Si no contesta en 2 minutos, hay que esperar 24 h y volver a intentar (así funciona su servicio gratuito). El número del bot puede cambiar con el tiempo; el vigente aparece en callmebot.com → "WhatsApp Text Messages".</span>
   </p>
   <table id="tabla-wa"><thead>
     <tr><th>Nombre</th><th>Teléfono (con 521…)</th><th>Apikey</th><th style="width:150px"></th></tr>
@@ -97,7 +113,17 @@ let NUMEROS_WA=[];
 async function cargarWA(){
   const r=await api.get("/api/whatsapp");
   NUMEROS_WA=r.numeros||[];
+  document.getElementById("w-webhook").value=r.webhook||"";
   pintarWA();
+}
+async function guardarWebhook(){
+  const r=await api.put("/api/whatsapp",{webhook:v("w-webhook")});
+  aviso(r.ok?"Webhook guardado ✅ Usa 📤 Probar":"No se pudo guardar");
+}
+async function probarWebhook(){
+  aviso("Enviando prueba a n8n…");
+  const r=await api.post("/api/whatsapp/probar-webhook",{});
+  aviso(r.ok?"✅ n8n recibió la prueba (revisa que llegue el WhatsApp)":"❌ "+(r.error||r.detalle||"No respondió"));
 }
 function pintarWA(){
   const tb=document.querySelector("#tabla-wa tbody");

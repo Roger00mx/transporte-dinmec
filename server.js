@@ -255,16 +255,42 @@ function enviarWhatsApp(phone, apikey, texto) {
     r.on("timeout", () => { r.destroy(); resolve({ ok: false, detalle: "timeout" }); });
   });
 }
+// Manda un JSON a un webhook (ej. n8n) que se encarga de enviar el WhatsApp
+function enviarWebhook(urlWebhook, datos) {
+  return new Promise((resolve) => {
+    try {
+      const u = new URL(urlWebhook);
+      const lib = u.protocol === "https:" ? https : http;
+      const cuerpo = JSON.stringify(datos);
+      const r = lib.request(u, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(cuerpo) }, timeout: 15000 }, (resp) => {
+        let b = "";
+        resp.on("data", (c) => b += c);
+        resp.on("end", () => resolve({ ok: resp.statusCode >= 200 && resp.statusCode < 300, estatus: resp.statusCode, detalle: b.slice(0, 200) }));
+      });
+      r.on("error", (e) => resolve({ ok: false, detalle: e.message }));
+      r.on("timeout", () => { r.destroy(); resolve({ ok: false, detalle: "timeout" }); });
+      r.end(cuerpo);
+    } catch (e) { resolve({ ok: false, detalle: e.message }); }
+  });
+}
+
 async function avisarNuevaSalida(v) {
+  const texto = "🚚 DINMEC - Nueva salida " + v.folio +
+    "\nUnidad: " + (v.unidad || "-") +
+    "\nOperador: " + (v.operador || "-") +
+    "\nActividad: " + (v.descripcion || "").slice(0, 150) +
+    "\nSalida: " + v.fecha_salida + " " + (v.hora_salida || "") +
+    "\nSolicitó: " + (v.solicitante || "-");
+  // 1) Webhook de n8n (si está configurado): n8n reparte el WhatsApp con su número vinculado
+  const webhook = leerConfig("whatsapp_webhook", "");
+  if (webhook) {
+    const r = await enviarWebhook(webhook, { evento: "nueva_salida", mensaje: texto, folio: v.folio, unidad: v.unidad || "", operador: v.operador || "", descripcion: v.descripcion || "", fecha_salida: v.fecha_salida, hora_salida: v.hora_salida || "", solicitante: v.solicitante || "" });
+    console.log("Webhook n8n nueva salida: " + (r.ok ? "enviado" : "FALLO " + r.detalle));
+  }
+  // 2) Números de CallMeBot (si hay)
   const numeros = leerConfig("whatsapp_numeros", []);
   for (const n of numeros) {
     if (!n.phone || !n.apikey) continue;
-    const texto = "🚚 DINMEC - Nueva salida " + v.folio +
-      "\nUnidad: " + (v.unidad || "-") +
-      "\nOperador: " + (v.operador || "-") +
-      "\nActividad: " + (v.descripcion || "").slice(0, 150) +
-      "\nSalida: " + v.fecha_salida + " " + (v.hora_salida || "") +
-      "\nSolicitó: " + (v.solicitante || "-");
     try {
       const r = await enviarWhatsApp(n.phone, n.apikey, texto);
       console.log("WhatsApp nueva salida a " + n.phone + ": " + (r.ok ? "enviado" : "FALLO " + r.detalle));
@@ -441,16 +467,26 @@ const servidor = http.createServer(async (req, res) => {
     if (ruta === "/api/whatsapp") {
       if (!esAdmin(yo)) return json(res, 403, { error: "Solo administrador" });
       if (req.method === "GET") {
-        return json(res, 200, { numeros: leerConfig("whatsapp_numeros", []) });
+        return json(res, 200, { numeros: leerConfig("whatsapp_numeros", []), webhook: leerConfig("whatsapp_webhook", "") });
       }
       if (req.method === "PUT") {
         const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
-        const numeros = (Array.isArray(b.numeros) ? b.numeros : [])
-          .filter((n) => n.phone)
-          .map((n) => ({ nombre: String(n.nombre || ""), phone: String(n.phone).trim(), apikey: String(n.apikey || "").trim() }));
-        guardarConfig("whatsapp_numeros", numeros);
+        if (Array.isArray(b.numeros)) {
+          const numeros = b.numeros
+            .filter((n) => n.phone)
+            .map((n) => ({ nombre: String(n.nombre || ""), phone: String(n.phone).trim(), apikey: String(n.apikey || "").trim() }));
+          guardarConfig("whatsapp_numeros", numeros);
+        }
+        if ("webhook" in b) guardarConfig("whatsapp_webhook", String(b.webhook || "").trim());
         return json(res, 200, { ok: true });
       }
+    }
+    if (ruta === "/api/whatsapp/probar-webhook" && req.method === "POST") {
+      if (!esAdmin(yo)) return json(res, 403, { error: "Solo administrador" });
+      const webhook = leerConfig("whatsapp_webhook", "");
+      if (!webhook) return json(res, 400, { error: "Primero guarda la dirección del webhook" });
+      const r = await enviarWebhook(webhook, { evento: "prueba", mensaje: "✅ Prueba de Control de Transporte DINMEC: la conexión con n8n funciona.", folio: "TR-PRUEBA", unidad: "", operador: "", descripcion: "Mensaje de prueba", fecha_salida: hoyPlanta(), hora_salida: "", solicitante: yo.nombre });
+      return json(res, 200, r);
     }
     if (ruta === "/api/whatsapp/probar" && req.method === "POST") {
       if (!esAdmin(yo)) return json(res, 403, { error: "Solo administrador" });
