@@ -102,11 +102,13 @@ function pintar(){
   cont.innerHTML=lista.map(v=>`
     <div class="tarjeta" onclick="location.href='viaje.html?id=${v.id}'">
       <div class="cli">${escaparHTML(v.folio||"")}
-        <span class="chip ${v.estado==="finalizado"?"finalizado":"encurso"}">${v.estado==="finalizado"?"✅ Finalizada":"🟡 En curso"}</span>
+        ${v.estado==="finalizado"?`<span class="chip finalizado">✅ Finalizada</span>`
+          :esProgramada(v)?`<span class="chip programada">🕐 Salida programada</span>`
+          :`<span class="chip encurso">🟡 En curso</span>`}
       </div>
-      <div class="desc">${escaparHTML(v.descripcion||"(sin descripción)")}</div>
-      <div class="meta">🚚 ${escaparHTML(v.unidad||"—")} · 👷 ${escaparHTML(v.operador||"sin operador")}</div>
-      <div class="meta">📅 Salida: ${fechaBonita(v.fecha_salida)} ${v.hora_salida?("· "+v.hora_salida):""}
+      <div class="desc" style="color:var(--azul);font-weight:600">${escaparHTML(v.descripcion||"(sin descripción)")}</div>
+      <div class="meta">🚚 ${escaparHTML(v.unidad||"—")} · 👷 <b style="color:var(--pri)">${escaparHTML(v.operador||"sin operador")}</b></div>
+      <div class="meta">📅 Salida: <b style="color:var(--verde)">${fechaBonita(v.fecha_salida)} ${v.hora_salida?("· "+v.hora_salida):""}</b>
         ${v.hora_regreso?("&nbsp;→&nbsp; Regreso: "+fechaBonita(v.fecha_regreso_real||v.fecha_salida)+" · "+v.hora_regreso):""}</div>
       <div class="chips">
         <span class="chip">Solicitó: ${escaparHTML(v.solicitante||"—")}</span>

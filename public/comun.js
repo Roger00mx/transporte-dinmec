@@ -50,6 +50,13 @@ function horaAhora() {
   const d = new Date();
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }
+// Una salida "en curso" cuya hora de salida aún no llega se muestra como PROGRAMADA
+function esProgramada(v) {
+  if (!v || v.estado !== "en_curso" || !v.fecha_salida) return false;
+  const ms = new Date(v.fecha_salida + "T" + (v.hora_salida || "00:00")).getTime();
+  return !isNaN(ms) && ms > Date.now();
+}
+
 function fechaBonita(iso) {
   if (!iso) return "";
   const [a, m, d] = iso.split("-").map(Number);

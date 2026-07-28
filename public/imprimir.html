@@ -79,15 +79,31 @@ function kmRecorridos(v){
   const a=parseFloat(v.km_inicial), b=parseFloat(v.km_final);
   return (!isNaN(a)&&!isNaN(b)&&b>=a)?((b-a).toLocaleString()+" km"):"—";
 }
+function bloqueCasetas(v){
+  const cs=parseJSON(v.casetas);
+  if(!cs.length) return "";
+  const total=cs.reduce((s,c)=>s+(parseFloat(c.monto)||0),0);
+  return `<div class="bloque-tit">Casetas (peaje)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+      <thead><tr><th style="text-align:left;border-bottom:2px solid var(--linea);padding:4px 6px">Ubicación</th>
+      <th style="text-align:left;border-bottom:2px solid var(--linea);padding:4px 6px">Pagada con</th>
+      <th style="text-align:right;border-bottom:2px solid var(--linea);padding:4px 6px">Costo</th></tr></thead>
+      <tbody>${cs.map(c=>`<tr><td>${escaparHTML(c.ubicacion||"")}</td><td>${escaparHTML(c.pago||"Efectivo")}</td><td style="text-align:right">${dinero(c.monto)}</td></tr>`).join("")}
+      <tr><td colspan="2" style="padding:4px 6px;font-weight:700;border-top:1.5px solid var(--linea)">TOTAL CASETAS</td><td style="text-align:right;font-weight:700;padding:4px 6px;border-top:1.5px solid var(--linea)">${dinero(total)}</td></tr>
+      </tbody></table>`;
+}
 function bloqueGastos(v){
   const gastos=parseJSON(v.gastos);
-  const total=gastos.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
-  const efectivo=gastos.filter(g=>(g.pago||"Efectivo")==="Efectivo").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  const cs=parseJSON(v.casetas);
+  const casetasEfec=cs.filter(c=>(c.pago||"Efectivo")==="Efectivo").reduce((s,c)=>s+(parseFloat(c.monto)||0),0);
+  const casetasTag=cs.filter(c=>(c.pago||"Efectivo")!=="Efectivo").reduce((s,c)=>s+(parseFloat(c.monto)||0),0);
+  const total=gastos.reduce((s,g)=>s+(parseFloat(g.monto)||0),0)+casetasEfec+casetasTag;
+  const efectivo=gastos.filter(g=>(g.pago||"Efectivo")==="Efectivo").reduce((s,g)=>s+(parseFloat(g.monto)||0),0)+casetasEfec;
   const tagTarjeta=total-efectivo;
-  const casetas=gastos.filter(g=>g.tipo==="Casetas").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  const casetas=gastos.filter(g=>g.tipo==="Casetas").reduce((s,g)=>s+(parseFloat(g.monto)||0),0)+casetasEfec+casetasTag;
   const viat=parseFloat(v.viaticos_asignados)||0;
   const inicial=parseFloat(v.emergencias_asignadas)||0;
-  if(!gastos.length && !inicial && !viat) return "";
+  if(!gastos.length && !cs.length && !inicial && !viat) return "";
   const filas=gastos.map(g=>`<tr><td>${escaparHTML(g.tipo||"")}</td><td>${escaparHTML(g.descripcion||"")}</td><td>${escaparHTML(g.pago||"Efectivo")}</td><td style="text-align:right">${dinero(g.monto)}</td></tr>`).join("");
   const resta=inicial-viat-efectivo;
   return `<div class="bloque-tit">Gastos del viaje y corte de caja</div>
@@ -153,6 +169,7 @@ async function cargarFicha(){
       <div><span>Kilometraje final:</span> ${v.km_final?Number(parseFloat(v.km_final)).toLocaleString()+" km":"—"}</div>
       <div><span>Km recorridos:</span> ${kmRecorridos(v)}</div>
     </div>
+    ${bloqueCasetas(v)}
     ${bloqueGastos(v)}
     ${bloqueTraficos(v)}
     ${v.observaciones?`<div class="obs"><b>Observaciones:</b> ${escaparHTML(v.observaciones)}</div>`:""}

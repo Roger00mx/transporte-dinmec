@@ -60,6 +60,7 @@ h1,h2,h3{margin:0 0 .4em}
 .chip{font-size:.72rem;background:var(--azul-bg);color:var(--azul);padding:3px 9px;border-radius:20px;font-weight:600}
 .chip.encurso{background:var(--ambar-bg);color:#a4700a}
 .chip.finalizado{background:var(--verde-bg);color:var(--verde)}
+.chip.programada{background:var(--azul-bg);color:var(--azul)}
 
 /* Encabezado de seccion */
 .seccion-tit{display:flex;align-items:center;gap:10px;margin:22px 0 10px;flex-wrap:wrap}

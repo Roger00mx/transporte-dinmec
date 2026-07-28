@@ -174,9 +174,19 @@
     </div>
   </div>
 
-  <!-- ============ SECCIÓN 3: GASTOS DEL VIAJE ============ -->
+  <!-- ============ SECCIÓN 3: CASETAS (PEAJE) ============ -->
   <div class="cabecera">
-    <h3>💰 Gastos del viaje <span style="font-weight:400;text-transform:none;font-size:.8rem;color:var(--gris)">(casetas, estacionamiento, hotel…)</span></h3>
+    <h3>🛣️ Casetas <span style="font-weight:400;text-transform:none;font-size:.8rem;color:var(--gris)">(peaje: costo, ubicación y cómo se pagó)</span></h3>
+    <div id="lista-casetas"></div>
+    <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn chico" id="btn-caseta">➕ Agregar caseta</button>
+      <span id="total-casetas" style="font-weight:700;color:var(--azul)"></span>
+    </div>
+  </div>
+
+  <!-- ============ SECCIÓN 4: GASTOS DEL VIAJE ============ -->
+  <div class="cabecera">
+    <h3>💰 Otros gastos del viaje <span style="font-weight:400;text-transform:none;font-size:.8rem;color:var(--gris)">(estacionamiento, hotel, comida…)</span></h3>
     <div id="lista-gastos"></div>
     <div style="margin-top:10px">
       <button class="btn chico" id="btn-gasto">➕ Agregar gasto</button>
@@ -210,7 +220,8 @@ let YO=null, ID=paramURL("id"), VIAJE=null;
 const FIRMAS={}; // { solicitante:{pad,valor,quien,cuando}, operador:{...}, recibe:{...} }
 let GASTOS=[];   // [{tipo, descripcion, monto}]
 let TRAFICOS=[]; // [{fecha, hora, ubicacion}]
-const TIPOS_GASTO=["Casetas","Estacionamiento","Hotel","Comida","Otro"];
+const TIPOS_GASTO=["Estacionamiento","Hotel","Comida","Otro"]; // las casetas tienen su propia sección
+let CASETAS=[]; // [{id, ubicacion, monto, pago(Efectivo|TAG)}]
 const PERSONAS_LLAVES=["Natalia","Miriam"];
 
 // ---- Selector de persona (llaves): Natalia / Miriam / Otro ----
@@ -266,8 +277,8 @@ function restaurarBorrador(){
   pon("f-tc_banco",b.tc_banco); pon("f-tc_digitos",b.tc_digitos);
   pon("f-llaves_recibe",b.llaves_recibe);
   ponPersona("entrega", b.llaves_entrega_por);
-  GASTOS=parseJSON(b.gastos); TRAFICOS=parseJSON(b.traficos);
-  pintarGastos(); pintarTraficos(); notaRecorrido();
+  GASTOS=parseJSON(b.gastos); TRAFICOS=parseJSON(b.traficos); CASETAS=parseJSON(b.casetas);
+  pintarGastos(); pintarTraficos(); pintarCasetas(); notaRecorrido();
   if(b.firma_solicitante) montarFirma("firma-solicitante","solicitante",b.firma_solicitante,puedeSalida());
   if(b.firma_operador) montarFirma("firma-operador","operador",b.firma_operador,true);
   if(b.firma_llaves_salida) montarFirma("firma-llaves-salida","llaves_salida",b.firma_llaves_salida,puedeSalida());
@@ -313,8 +324,9 @@ function pintar(){
   if(ID){
     const ch=document.getElementById("chip-estado");
     ch.style.display="inline-block";
-    ch.className = "chip " + (v.estado==="finalizado"?"finalizado":"encurso");
-    ch.textContent = v.estado==="finalizado" ? "✅ Finalizada" : "🟡 En curso";
+    if(v.estado==="finalizado"){ ch.className="chip finalizado"; ch.textContent="✅ Finalizada"; }
+    else if(esProgramada(v)){ ch.className="chip programada"; ch.textContent="🕐 Salida programada"; }
+    else { ch.className="chip encurso"; ch.textContent="🟡 En curso"; }
     document.getElementById("btn-pdf").style.display="inline-flex";
     document.getElementById("btn-pdf").onclick=()=>window.open("imprimir.html?id="+ID,"_blank");
     document.getElementById("btn-resumen").style.display="inline-flex";
@@ -347,10 +359,13 @@ function pintar(){
   pon("f-km_final", v.km_final);
   GASTOS=parseJSON(v.gastos);
   TRAFICOS=parseJSON(v.traficos);
+  CASETAS=parseJSON(v.casetas);
   pintarGastos();
   pintarTraficos();
+  pintarCasetas();
   notaRecorrido();
-  document.getElementById("btn-gasto").onclick=(e)=>{e.preventDefault();GASTOS.push({tipo:"Casetas",descripcion:"",monto:""});pintarGastos();};
+  document.getElementById("btn-gasto").onclick=(e)=>{e.preventDefault();GASTOS.push({tipo:"Estacionamiento",descripcion:"",monto:"",pago:"Efectivo"});pintarGastos();};
+  document.getElementById("btn-caseta").onclick=(e)=>{e.preventDefault();CASETAS.push({id:"c"+Math.random().toString(36).slice(2,10),ubicacion:"",monto:"",pago:"Efectivo"});pintarCasetas();};
   document.getElementById("btn-trafico").onclick=(e)=>{e.preventDefault();TRAFICOS.push({fecha:fechaHoy(),hora:horaAhora(),ubicacion:""});pintarTraficos();};
   pon("f-fecha_regreso_real", v.fecha_regreso_real);
   pon("f-hora_regreso", v.hora_regreso);
@@ -411,7 +426,7 @@ function pintarGastos(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:flex-end">
       <div class="campo" style="min-width:140px"><label>Tipo</label>
         <select onchange="GASTOS[${i}].tipo=this.value">
-          ${TIPOS_GASTO.map(t=>`<option ${g.tipo===t?"selected":""}>${t}</option>`).join("")}
+          ${(g.tipo&&!TIPOS_GASTO.includes(g.tipo)?[g.tipo,...TIPOS_GASTO]:TIPOS_GASTO).map(t=>`<option ${g.tipo===t?"selected":""}>${t}</option>`).join("")}
         </select></div>
       <div class="campo" style="flex:1;min-width:150px"><label>Descripción (opcional)</label>
         <input value="${escaparHTML(g.descripcion||"")}" placeholder="Ej. caseta Amozoc" oninput="GASTOS[${i}].descripcion=this.value"></div>
@@ -428,9 +443,11 @@ function pintarGastos(){
 // ---- Corte de caja: monto inicial (emergencias) − viáticos − gastos EN EFECTIVO = a devolver ----
 // Lo pagado con TAG o tarjeta no sale del efectivo, por eso se muestra aparte.
 function resumenViaticos(){
-  const efectivo=GASTOS.filter(g=>(g.pago||"Efectivo")==="Efectivo").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
-  const tagTarjeta=GASTOS.filter(g=>(g.pago||"Efectivo")!=="Efectivo").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
-  const casetas=GASTOS.filter(g=>g.tipo==="Casetas").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  const casetasEfec=CASETAS.filter(c=>(c.pago||"Efectivo")==="Efectivo").reduce((s,c)=>s+(parseFloat(c.monto)||0),0);
+  const casetasTag=CASETAS.filter(c=>(c.pago||"Efectivo")!=="Efectivo").reduce((s,c)=>s+(parseFloat(c.monto)||0),0);
+  const efectivo=GASTOS.filter(g=>(g.pago||"Efectivo")==="Efectivo").reduce((s,g)=>s+(parseFloat(g.monto)||0),0)+casetasEfec;
+  const tagTarjeta=GASTOS.filter(g=>(g.pago||"Efectivo")!=="Efectivo").reduce((s,g)=>s+(parseFloat(g.monto)||0),0)+casetasTag;
+  const casetas=totalCasetasMonto();
   const viaticos=parseFloat(val("f-viaticos_asignados"))||0;
   const inicial=parseFloat(val("f-emergencias_asignadas"))||0;
   const cont=document.getElementById("corte-caja");
@@ -448,6 +465,71 @@ function resumenViaticos(){
     ${tagTarjeta?fila("Pagado con TAG/tarjeta (no sale del efectivo)", dinero(tagTarjeta), "margin-top:6px;color:var(--gris);font-size:.85rem"):""}
     ${casetas?fila("🛣️ Total casetas (peaje)", dinero(casetas), "color:var(--gris);font-size:.85rem"):""}
   </div>`;
+}
+
+// ---- Casetas (peaje): costo, ubicación, forma de pago y comprobante ----
+function pintarCasetas(){
+  CASETAS.forEach(c=>{ if(!c.id) c.id="c"+Math.random().toString(36).slice(2,10); });
+  const todasFotos=(VIAJE&&VIAJE.fotos)||[];
+  const cont=document.getElementById("lista-casetas");
+  cont.innerHTML=CASETAS.map((c,i)=>{
+    const fotosC=todasFotos.filter(f=>f.categoria==="caseta-"+c.id);
+    const esEfectivo=(c.pago||"Efectivo")==="Efectivo";
+    return `
+    <div style="border:1px solid var(--linea);border-radius:10px;padding:10px;margin-top:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="campo" style="flex:1;min-width:170px"><label>Ubicación de la caseta</label>
+          <input value="${escaparHTML(c.ubicacion||"")}" placeholder="Ej. Caseta Amozoc" oninput="CASETAS[${i}].ubicacion=this.value"></div>
+        <div class="campo" style="width:120px"><label>Costo ($)</label>
+          <input type="number" inputmode="decimal" min="0" step="0.01" value="${escaparHTML(c.monto||"")}" placeholder="0.00" oninput="CASETAS[${i}].monto=this.value;totalCasetas();resumenViaticos()"></div>
+        <div class="campo" style="width:120px"><label>Pagada con</label>
+          <select onchange="CASETAS[${i}].pago=this.value;pintarCasetas();resumenViaticos();programarAutoguardado()">
+            ${["Efectivo","TAG"].map(p=>`<option ${(c.pago||"Efectivo")===p?"selected":""}>${p}</option>`).join("")}
+          </select></div>
+        <button class="btn chico peligro" title="Quitar" onclick="CASETAS.splice(${i},1);pintarCasetas();resumenViaticos();programarAutoguardado()">×</button>
+      </div>
+      ${esEfectivo?`
+      <div class="fotos-grid" style="margin-top:8px">
+        ${fotosC.map(f=>`
+          <div class="foto-item" style="width:74px;height:74px">
+            <img src="${f.url}" onclick="verFoto('${f.url}')" style="cursor:zoom-in">
+            <button onclick="borrarFotoCaseta('${f.id}')" title="Eliminar foto">×</button>
+          </div>`).join("")}
+        ${ID?`<label class="foto-add" style="width:74px;height:74px;font-size:.6rem;gap:1px">🧾<span>Comprobante</span>
+          <input type="file" accept="image/*" capture="environment" multiple onchange="subirFotoCaseta(this.files,'${c.id}')">
+        </label>`:`<span class="nota" style="color:var(--gris);font-size:.75rem;align-self:center">El comprobante se puede subir después de guardar la salida.</span>`}
+      </div>`:""}
+    </div>`;
+  }).join("") || `<div class="nota" style="color:var(--gris);font-size:.85rem;margin-top:6px">Sin casetas registradas. Toca ➕ por cada caseta que se pague en el camino.</div>`;
+  totalCasetas();
+}
+function totalCasetasMonto(){
+  const nuevas=CASETAS.reduce((s,c)=>s+(parseFloat(c.monto)||0),0);
+  const viejas=GASTOS.filter(g=>g.tipo==="Casetas").reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
+  return nuevas+viejas;
+}
+function totalCasetas(){
+  const t=totalCasetasMonto();
+  document.getElementById("total-casetas").textContent = t ? ("Total de casetas: "+dinero(t)) : "";
+}
+async function subirFotoCaseta(files, cid){
+  await api.put("/api/viaje/"+ID, { casetas: JSON.stringify(CASETAS) });
+  for(const file of files){
+    aviso("Subiendo comprobante…");
+    const blob=await comprimirImagen(file);
+    const r=await fetch("/api/viaje/"+ID+"/foto?categoria=caseta-"+cid+"&nombre="+encodeURIComponent(file.name.replace(/\.[^.]+$/,".jpg")),{method:"POST",body:blob});
+    const j=await r.json();
+    if(j.error){ aviso(j.error); return; }
+  }
+  aviso("Comprobante guardado ✅");
+  VIAJE=await api.get("/api/viaje/"+ID);
+  pintarCasetas();
+}
+async function borrarFotoCaseta(fid){
+  if(!confirm("¿Eliminar este comprobante?")) return;
+  await api.del("/api/foto/"+fid);
+  VIAJE=await api.get("/api/viaje/"+ID);
+  pintarCasetas();
 }
 
 // ---- Tráfico / demoras (con foto opcional) ----
@@ -562,6 +644,7 @@ function datosFormulario(){
     tc_banco: val("f-tc_banco"),
     tc_digitos: val("f-tc_digitos"),
     gastos: JSON.stringify(GASTOS.filter(g=>(g.monto||"").toString().trim()||(g.descripcion||"").trim())),
+    casetas: JSON.stringify(CASETAS.filter(c=>(c.monto||"").toString().trim()||(c.ubicacion||"").trim())),
     traficos: JSON.stringify(TRAFICOS.filter(t=>(t.ubicacion||"").trim()||t.hora)),
     fecha_regreso_real: val("f-fecha_regreso_real"),
     hora_regreso: val("f-hora_regreso"),
@@ -619,7 +702,7 @@ async function borrar(){
 // ---- Fotos (evidencias generales; las de tráfico se ven en su sección) ----
 function pintarFotos(){
   const cont=document.getElementById("fotos");
-  const fotos=((VIAJE&&VIAJE.fotos)||[]).filter(f=>!(f.categoria||"").startsWith("trafico-"));
+  const fotos=((VIAJE&&VIAJE.fotos)||[]).filter(f=>!(f.categoria||"").startsWith("trafico-")&&!(f.categoria||"").startsWith("caseta-"));
   cont.innerHTML = fotos.map(f=>`
     <div class="foto-item">
       <img src="${f.url}" onclick="verFoto('${f.url}')" style="cursor:zoom-in">

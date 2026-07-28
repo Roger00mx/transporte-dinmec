@@ -121,6 +121,8 @@ for (const col of ["km_inicial", "km_final", "viaticos_asignados", "gastos", "tr
 for (const col of ["emergencias_asignadas", "tag_digitos", "tc_banco", "tc_digitos"]) {
   if (!colExiste("viajes", col)) db.exec(`ALTER TABLE viajes ADD COLUMN ${col} TEXT DEFAULT ''`);
 }
+// Casetas del viaje (JSON: [{id, ubicacion, monto, pago}])
+if (!colExiste("viajes", "casetas")) db.exec("ALTER TABLE viajes ADD COLUMN casetas TEXT DEFAULT ''");
 // Kilometraje, nivel de combustible y costo en cargas de gasolina
 if (!colExiste("cargas", "kilometraje")) db.exec("ALTER TABLE cargas ADD COLUMN kilometraje TEXT DEFAULT ''");
 if (!colExiste("cargas", "nivel_combustible")) db.exec("ALTER TABLE cargas ADD COLUMN nivel_combustible TEXT DEFAULT ''");
@@ -330,7 +332,7 @@ function obtenerIncidente(id) {
 // Campos que cada rol puede modificar en un viaje
 const CAMPOS_REGRESO = [
   "fecha_regreso_real", "hora_regreso", "recibe_carga", "firma_recibe", "firma_operador",
-  "llaves_devuelve_a", "firma_llaves_regreso", "km_inicial", "km_final", "gastos", "traficos",
+  "llaves_devuelve_a", "firma_llaves_regreso", "km_inicial", "km_final", "gastos", "traficos", "casetas",
   "observaciones", "estado",
 ];
 const CAMPOS_SUPERVISOR = [
@@ -707,16 +709,16 @@ const servidor = http.createServer(async (req, res) => {
       db.prepare(`INSERT INTO viajes (id,folio,descripcion,solicitante,firma_solicitante,fecha_salida,hora_salida,
                   fecha_regreso,fecha_regreso_real,hora_regreso,unidad,operador,firma_operador,recibe_carga,firma_recibe,
                   llaves_entrega_por,llaves_recibe,firma_llaves_salida,llaves_devuelve_a,firma_llaves_regreso,
-                  km_inicial,km_final,viaticos_asignados,emergencias_asignadas,tag_digitos,tc_banco,tc_digitos,gastos,traficos,
+                  km_inicial,km_final,viaticos_asignados,emergencias_asignadas,tag_digitos,tc_banco,tc_digitos,gastos,traficos,casetas,
                   observaciones,estado,creado,creado_por,actualizado,actualizado_por)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
         id, folio, b.descripcion || "", b.solicitante || yo.nombre, b.firma_solicitante || "",
         fechaSalida, b.hora_salida || "", b.fecha_regreso || "", "", "",
         b.unidad || "", b.operador || "", b.firma_operador || "", "", "",
         b.llaves_entrega_por || "", b.llaves_recibe || "", b.firma_llaves_salida || "", "", "",
         String(b.km_inicial || ""), "", String(b.viaticos_asignados || ""),
         String(b.emergencias_asignadas || ""), String(b.tag_digitos || ""), String(b.tc_banco || ""), String(b.tc_digitos || ""),
-        b.gastos || "", b.traficos || "",
+        b.gastos || "", b.traficos || "", b.casetas || "",
         b.observaciones || "", "en_curso", ahora(), yo.nombre, ahora(), yo.nombre);
       avisarCambio(id, "nuevo");
       // Aviso por WhatsApp (sin detener la respuesta)

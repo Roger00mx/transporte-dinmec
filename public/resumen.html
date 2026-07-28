@@ -102,7 +102,11 @@ async function inicio(){
   const gastoGas=d.cargas.reduce((s,c)=>s+(parseFloat(c.costo)||0),0);
   if(gastoGas) stats.push({v:dinero(gastoGas),e:"Gastado en gasolina"});
   const gastosViaje=parseJSON(d.viaje.gastos);
-  const casetas=gastosViaje.filter(g=>g.tipo==="Casetas");
+  // casetas: la sección propia + las que se hayan capturado antes como "gasto tipo Casetas"
+  const casetas=[
+    ...parseJSON(d.viaje.casetas).map(c=>({monto:c.monto,pago:c.pago||"Efectivo"})),
+    ...gastosViaje.filter(g=>g.tipo==="Casetas").map(g=>({monto:g.monto,pago:g.pago||"Efectivo"}))
+  ];
   const casetasTotal=casetas.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
   if(casetasTotal) stats.push({v:dinero(casetasTotal),e:"Casetas (peaje)"});
   stats.push({v:d.incidentes.length,e:"Incidentes"});
