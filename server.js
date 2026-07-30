@@ -287,7 +287,16 @@ async function avisarNuevaSalida(v) {
   // 1) Webhook de n8n (si está configurado): n8n reparte el WhatsApp con su número vinculado
   const webhook = leerConfig("whatsapp_webhook", "");
   if (webhook) {
-    const r = await enviarWebhook(webhook, { evento: "nueva_salida", mensaje: texto, folio: v.folio, unidad: v.unidad || "", operador: v.operador || "", descripcion: v.descripcion || "", fecha_salida: v.fecha_salida, hora_salida: v.hora_salida || "", solicitante: v.solicitante || "" });
+    // Las plantillas de Meta no aceptan saltos de línea en las variables: todo en una sola línea
+    const plano = (s, max) => String(s || "").replace(/\s+/g, " ").trim().slice(0, max || 200) || "-";
+    const r = await enviarWebhook(webhook, {
+      evento: "nueva_salida", mensaje: texto,
+      folio: plano(v.folio, 30), unidad: plano(v.unidad, 40), operador: plano(v.operador, 60),
+      descripcion: plano(v.descripcion, 150),
+      fecha_salida: plano(v.fecha_salida, 20), hora_salida: plano(v.hora_salida, 10),
+      salida: plano((v.fecha_salida || "") + " " + (v.hora_salida || ""), 30),
+      solicitante: plano(v.solicitante, 60),
+    });
     console.log("Webhook n8n nueva salida: " + (r.ok ? "enviado" : "FALLO " + r.detalle));
   }
   // 2) Números de CallMeBot (si hay)
