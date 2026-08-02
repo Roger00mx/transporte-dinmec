@@ -97,6 +97,20 @@
     <input id="w-apikey" placeholder="Apikey de CallMeBot" style="width:170px">
     <button class="btn primario" onclick="agregarWA()">➕ Agregar</button>
   </div>
+
+  <div class="seccion-tit" style="margin-top:34px"><h2>📡 GPS de las unidades (Tracksolid)</h2></div>
+  <p style="color:var(--gris);font-size:.9rem;margin-top:0">
+    Con esto la app lee el GPS <b>directamente, 24/7, sin depender de ninguna computadora</b>.<br>
+    En la app de Tracksolid: unidad → <b>Compartir</b> → copia el texto/enlace compartido y pégalo abajo.
+    Si el enlace vence (según lo que elijas al compartir), se genera otro y se vuelve a pegar aquí.
+  </p>
+  <table id="tabla-gps"><thead>
+    <tr><th>Vehículo</th><th>IMEI</th><th style="width:110px"></th></tr>
+  </thead><tbody></tbody></table>
+  <div class="fila-nueva" style="align-items:stretch">
+    <textarea id="g-texto" placeholder="Pega aquí el enlace compartido de Tracksolid (debe incluir deviceIMEI=...)" style="flex:1;min-width:260px;border:1.5px solid var(--linea);border-radius:8px;padding:9px 11px;font-family:inherit;font-size:.9rem" rows="2"></textarea>
+    <button class="btn primario" onclick="agregarGPSV()">➕ Agregar vehículo</button>
+  </div>
 </div>
 
 <script src="comun.js"></script>
@@ -105,7 +119,42 @@ let YO=null;
 async function inicio(){
   YO=await exigirSesion(); if(!YO) return;
   if(YO.rol_app!=="admin"){ aviso("Solo el administrador puede entrar aquí"); setTimeout(()=>location.href="index.html",1200); return; }
-  await Promise.all([cargarUsuarios(), cargarUnidades(), cargarWA()]);
+  await Promise.all([cargarUsuarios(), cargarUnidades(), cargarWA(), cargarGPSV()]);
+}
+
+// ---- Vehículos GPS (lector integrado) ----
+let VEHICULOS_GPS=[];
+async function cargarGPSV(){
+  const r=await api.get("/api/gps-vehiculos");
+  VEHICULOS_GPS=r.vehiculos||[];
+  pintarGPSV();
+}
+function pintarGPSV(){
+  const tb=document.querySelector("#tabla-gps tbody");
+  tb.innerHTML=VEHICULOS_GPS.map((v,i)=>`<tr>
+    <td>🛰️ ${escaparHTML(v.name)}</td>
+    <td>${escaparHTML(v.imei)}</td>
+    <td style="text-align:right"><button class="btn chico peligro" onclick="quitarGPSV(${i})">Quitar</button></td>
+  </tr>`).join("") || `<tr><td colspan="3" style="color:var(--gris)">Sin vehículos GPS. Pega abajo el enlace compartido de Tracksolid.</td></tr>`;
+}
+async function agregarGPSV(){
+  const texto=document.getElementById("g-texto").value;
+  const url=(texto.match(/https?:\/\/\S+/)||[])[0];
+  const imei=(texto.match(/deviceIMEI=(\d+)/)||[])[1];
+  const nameM=(texto.match(/deviceName=([^&\s]+)/)||[])[1];
+  if(!url||!imei){ aviso("No encontré un enlace válido de Tracksolid (debe incluir deviceIMEI=...)"); return; }
+  const name=nameM?decodeURIComponent(nameM.replace(/\+/g," ")):("Vehículo "+imei.slice(-4));
+  VEHICULOS_GPS=VEHICULOS_GPS.filter(v=>v.imei!==imei);
+  VEHICULOS_GPS.push({name, imei, shareUrl:url});
+  const r=await api.put("/api/gps-vehiculos",{vehiculos:VEHICULOS_GPS});
+  if(r.ok){ aviso("Vehículo agregado ✅ En 1 minuto aparecerá en el mapa 📍"); document.getElementById("g-texto").value=""; pintarGPSV(); }
+  else aviso(r.error||"No se pudo guardar");
+}
+async function quitarGPSV(i){
+  if(!confirm("¿Quitar el GPS de "+VEHICULOS_GPS[i].name+"?")) return;
+  VEHICULOS_GPS.splice(i,1);
+  const r=await api.put("/api/gps-vehiculos",{vehiculos:VEHICULOS_GPS});
+  if(r.ok){ aviso("Vehículo quitado"); pintarGPSV(); } else aviso(r.error||"Error");
 }
 
 // ---- Avisos de WhatsApp ----

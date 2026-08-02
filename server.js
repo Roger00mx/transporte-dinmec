@@ -390,6 +390,173 @@ function listaFechas(desde, hasta, max = 8) {
   }
   return out;
 }
+
+// ==========================================================================
+//  GPS INTEGRADO: la app lee Tracksolid directamente (igual que el Monitor
+//  DINMEC) para que el GPS funcione 24/7 en la nube SIN depender de la PC.
+//  Se activa al registrar vehículos (config "gps_vehiculos"); si no hay,
+//  se usa el Monitor externo (MONITOR_URL) como antes.
+// ==========================================================================
+const DIR_POSICIONES = path.join(DIR_DATOS, "positions");
+const ARCHIVO_PARADAS_GPS = path.join(DIR_DATOS, "gps-paradas.json");
+const GPS_STOP_KMH = 3, GPS_DRIFT_M = 300, GPS_STALE_MIN = 15, GPS_MIN_PARADA_MIN = 5, GPS_POLL_SEG = 60;
+
+let gpsParadas = [];
+try { gpsParadas = JSON.parse(fs.readFileSync(ARCHIVO_PARADAS_GPS, "utf8")); } catch (_) {}
+const _gpsEstado = {};
+function gpsVehiculos() { return leerConfig("gps_vehiculos", []); }
+function gpsSt(imei) {
+  if (!_gpsEstado[imei]) _gpsEstado[imei] = { cookie: null, fix: null, lastGpsTime: 0, lastSeen: 0, stop: null, errors: 0 };
+  return _gpsEstado[imei];
+}
+// al arrancar, retomar paradas que quedaron abiertas
+for (const p of gpsParadas) if (!p.fin) { const st = gpsSt(p.imei); st.stop = { inicio: p.inicio, lat: p.lat, lng: p.lng, registroId: p.id }; }
+function guardarParadasGPS() { try { fs.writeFileSync(ARCHIVO_PARADAS_GPS, JSON.stringify(gpsParadas)); } catch (_) {} }
+function fechaPlantaDe(ms) {
+  const d = new Date(ms + TZ_MS);
+  return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
+}
+
+function httpGetSimple(urlStr, headers, redirs) {
+  redirs = redirs || 0;
+  return new Promise((resolve, reject) => {
+    let u;
+    try { u = new URL(urlStr); } catch (e) { return reject(e); }
+    const lib = u.protocol === "https:" ? https : http;
+    const r = lib.get(u, { headers: headers || {}, timeout: 20000 }, (resp) => {
+      if ([301, 302, 303, 307, 308].includes(resp.statusCode) && resp.headers.location && redirs < 3) {
+        resp.resume();
+        return resolve(httpGetSimple(new URL(resp.headers.location, urlStr).toString(), headers, redirs + 1));
+      }
+      let cuerpo = "";
+      resp.on("data", (c) => cuerpo += c);
+      resp.on("end", () => resolve({ status: resp.statusCode, headers: resp.headers, body: cuerpo }));
+    });
+    r.on("error", reject);
+    r.on("timeout", () => r.destroy(new Error("timeout")));
+  });
+}
+async function gpsRefrescarCookie(v) {
+  const r = await httpGetSimple(v.shareUrl, { "User-Agent": "Mozilla/5.0" });
+  const setc = r.headers["set-cookie"] || [];
+  const cookie = setc.map((c) => c.split(";")[0]).join("; ");
+  if (!cookie) throw new Error("sin cookie (¿enlace de Tracksolid vencido?)");
+  gpsSt(v.imei).cookie = cookie;
+}
+async function gpsConsultar(v) {
+  const st = gpsSt(v.imei);
+  if (!st.cookie) await gpsRefrescarCookie(v);
+  const url = "https://us.tracksolidpro.com/getStatus?imei=" + v.imei + "&isShare=1&ctimezone=GMT-06%3A00&_=" + Date.now();
+  let r = await httpGetSimple(url, { Cookie: st.cookie, "User-Agent": "Mozilla/5.0" });
+  let data = null;
+  try { data = JSON.parse(r.body); } catch (_) {}
+  if (!data || data.code !== 0 || !data.data || !data.data.gps) {
+    await gpsRefrescarCookie(v);
+    r = await httpGetSimple(url, { Cookie: st.cookie, "User-Agent": "Mozilla/5.0" });
+    data = JSON.parse(r.body);
+    if (!data || data.code !== 0 || !data.data || !data.data.gps) throw new Error("respuesta inválida de Tracksolid");
+  }
+  const g = data.data.gps;
+  return {
+    lat: Number(g.latitude), lng: Number(g.longitude),
+    speed: Number(g.gpsSpeed) || 0, acc: g.acc === "1",
+    gpsTime: new Date(String(g.gpsTime).replace(" ", "T")).getTime(),
+  };
+}
+function gpsGuardarPunto(imei, fix) {
+  const dir = path.join(DIR_POSICIONES, imei);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.appendFileSync(path.join(dir, fechaPlantaDe(fix.gpsTime) + ".ndjson"),
+    JSON.stringify({ t: fix.gpsTime, lat: fix.lat, lng: fix.lng, s: fix.speed, a: fix.acc ? 1 : 0 }) + "\n");
+}
+async function gpsGeocodificar(lat, lng) {
+  try {
+    const r = await httpGetSimple("https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=" + lat + "&lon=" + lng + "&accept-language=es",
+      { "User-Agent": "transporte-dinmec/1.0 (uso interno)" });
+    return JSON.parse(r.body).display_name || "";
+  } catch (_) { return ""; }
+}
+async function gpsProcesar(v, fix) {
+  const st = gpsSt(v.imei);
+  const ahoraMs = Date.now();
+  st.lastSeen = ahoraMs; st.errors = 0; st.fix = fix;
+  if (fix.gpsTime !== st.lastGpsTime) { st.lastGpsTime = fix.gpsTime; gpsGuardarPunto(v.imei, fix); }
+  const detenido = fix.speed < GPS_STOP_KMH;
+  if (detenido) {
+    if (!st.stop) { st.stop = { inicio: ahoraMs, lat: fix.lat, lng: fix.lng, registroId: null }; return; }
+    if (haversineKm(st.stop.lat, st.stop.lng, fix.lat, fix.lng) * 1000 > GPS_DRIFT_M) {
+      cerrarParadaGPS(st, ahoraMs);
+      st.stop = { inicio: ahoraMs, lat: fix.lat, lng: fix.lng, registroId: null };
+      return;
+    }
+    const min = (ahoraMs - st.stop.inicio) / 60000;
+    if (!st.stop.registroId && min >= GPS_MIN_PARADA_MIN) {
+      const reg = { id: "p" + ahoraMs + "_" + v.imei.slice(-4), imei: v.imei, nombre: v.name,
+        inicio: st.stop.inicio, fin: null, minutos: null, lat: st.stop.lat, lng: st.stop.lng, direccion: "" };
+      gpsParadas.push(reg);
+      if (gpsParadas.length > 3000) gpsParadas = gpsParadas.slice(-2000); // no crecer sin límite
+      st.stop.registroId = reg.id;
+      guardarParadasGPS();
+      gpsGeocodificar(reg.lat, reg.lng).then((dir) => { reg.direccion = dir; guardarParadasGPS(); });
+    }
+  } else if (st.stop) {
+    cerrarParadaGPS(st, ahoraMs);
+    st.stop = null;
+  }
+}
+function cerrarParadaGPS(st, ahoraMs) {
+  if (!st.stop || !st.stop.registroId) return;
+  const reg = gpsParadas.find((r) => r.id === st.stop.registroId);
+  if (reg) { reg.fin = ahoraMs; reg.minutos = Math.round((ahoraMs - st.stop.inicio) / 60000); guardarParadasGPS(); }
+}
+let _gpsOcupado = false;
+async function gpsCiclo() {
+  if (_gpsOcupado) return;
+  const vs = gpsVehiculos();
+  if (!vs.length) return;
+  _gpsOcupado = true;
+  for (const v of vs) {
+    try { await gpsProcesar(v, await gpsConsultar(v)); }
+    catch (e) { gpsSt(v.imei).errors++; console.log("GPS " + v.name + ": " + e.message); }
+  }
+  _gpsOcupado = false;
+}
+setInterval(gpsCiclo, GPS_POLL_SEG * 1000);
+setTimeout(gpsCiclo, 3000);
+
+// --- Lecturas internas con el MISMO formato que el Monitor externo ---
+function gpsStatusInterno() {
+  const ahoraMs = Date.now();
+  return gpsVehiculos().map((v) => {
+    const st = gpsSt(v.imei);
+    const viejo = st.lastSeen ? (ahoraMs - st.lastSeen) > GPS_STALE_MIN * 60000 : true;
+    let estado = "sin datos";
+    if (st.fix) estado = (st.errors >= 3 || viejo) ? "sin señal" : (st.stop ? "detenido" : "en movimiento");
+    else if (st.errors >= 3) estado = "sin señal";
+    return { name: v.name, imei: v.imei, estado, fix: st.fix, lastSeen: st.lastSeen,
+      stoppedSince: st.stop ? st.stop.inicio : null,
+      stoppedMinutes: st.stop ? Math.round((ahoraMs - st.stop.inicio) / 60000) : null, alerted: false };
+  });
+}
+function gpsRutaInterna(imei, fecha) {
+  try {
+    return fs.readFileSync(path.join(DIR_POSICIONES, path.basename(imei), fecha + ".ndjson"), "utf8")
+      .trim().split("\n").map((l) => JSON.parse(l));
+  } catch (_) { return []; }
+}
+function gpsParadasInternas(imei, fecha) {
+  return gpsParadas.filter((p) => p.imei === imei && fechaPlantaDe(p.inicio) === fecha)
+    .map((p) => ({ id: p.id, startTime: p.inicio, endTime: p.fin, minutes: p.minutos, lat: p.lat, lng: p.lng, address: p.direccion || "" }));
+}
+// Ruta/paradas: primero el GPS integrado; si no hay vehículos, el Monitor externo
+async function rutaGPS(imei, fecha) {
+  if (gpsVehiculos().length) return gpsRutaInterna(imei, fecha);
+  return await leerMonitor("/api/route?imei=" + encodeURIComponent(imei) + "&date=" + fecha).catch(() => []);
+}
+async function paradasGPS(imei, fecha) {
+  if (gpsVehiculos().length) return gpsParadasInternas(imei, fecha);
+  return await leerMonitor("/api/stops?imei=" + encodeURIComponent(imei) + "&date=" + fecha).catch(() => []);
+}
 const CAMPOS_INCIDENTE = ["fecha", "hora", "unidad", "descripcion", "reporta"];
 
 // ---------- Servir archivos estaticos ----------
@@ -617,13 +784,32 @@ const servidor = http.createServer(async (req, res) => {
       return json(res, 200, { mes, cargas: cargasMes, resumen });
     }
 
-    // ---- GPS: posición de cada auto (se conecta al Monitor DINMEC) ----
+    // ---- GPS: posición de cada auto (integrado o vía Monitor DINMEC) ----
     if (ruta === "/api/gps" && req.method === "GET") {
+      if (gpsVehiculos().length) {
+        return json(res, 200, { ok: true, interno: true, vehicles: gpsStatusInterno() });
+      }
       try {
         const datos = await leerMonitor("/api/status");
         return json(res, 200, { ok: true, ...datos });
       } catch (e) {
-        return json(res, 200, { ok: false, error: "No pude conectar con el Monitor DINMEC. Asegúrate de que esté encendido (Iniciar Monitor DINMEC.bat)." });
+        return json(res, 200, { ok: false, error: "No hay GPS configurado. Agrega los vehículos en Usuarios y unidades → 📡 GPS, o enciende el Monitor DINMEC local." });
+      }
+    }
+
+    // ---- Vehículos GPS del lector integrado (solo admin) ----
+    if (ruta === "/api/gps-vehiculos") {
+      if (!esAdmin(yo)) return json(res, 403, { error: "Solo administrador" });
+      if (req.method === "GET") return json(res, 200, { vehiculos: gpsVehiculos() });
+      if (req.method === "PUT") {
+        const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+        const vehiculos = (Array.isArray(b.vehiculos) ? b.vehiculos : [])
+          .filter((v) => v.imei && v.shareUrl)
+          .map((v) => ({ name: String(v.name || "Vehículo"), imei: String(v.imei).trim(), shareUrl: String(v.shareUrl).trim() }));
+        guardarConfig("gps_vehiculos", vehiculos);
+        for (const v of vehiculos) { const st = gpsSt(v.imei); st.cookie = null; st.errors = 0; }
+        setTimeout(gpsCiclo, 500); // leer de inmediato
+        return json(res, 200, { ok: true });
       }
     }
 
@@ -657,9 +843,9 @@ const servidor = http.createServer(async (req, res) => {
           let puntos = [];
           const paradasMap = {};
           for (const f of fechas) {
-            const pts = await leerMonitor("/api/route?imei=" + encodeURIComponent(uni.gps_imei) + "&date=" + f).catch(() => []);
+            const pts = await rutaGPS(uni.gps_imei, f);
             if (Array.isArray(pts)) puntos = puntos.concat(pts);
-            const stops = await leerMonitor("/api/stops?imei=" + encodeURIComponent(uni.gps_imei) + "&date=" + f).catch(() => []);
+            const stops = await paradasGPS(uni.gps_imei, f);
             if (Array.isArray(stops)) for (const s of stops) paradasMap[s.id] = s;
           }
           puntos = puntos.filter((p) => p.t >= iniMs && p.t <= finMs).sort((a, b) => a.t - b.t);
