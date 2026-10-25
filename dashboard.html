@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablero de viajes — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+<style>
+  .filtros{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:14px}
+  .filtros .campo{min-width:140px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:14px}
+  .stat{background:#fff;border-radius:12px;border:1px solid var(--linea);box-shadow:var(--sombra);padding:13px;text-align:center}
+  .stat .v{font-size:1.2rem;font-weight:800;color:var(--azul)}
+  .stat .e{font-size:.7rem;color:var(--gris);text-transform:uppercase;font-weight:700;letter-spacing:.3px}
+  .grafica{background:#fff;border-radius:var(--r);border:1px solid var(--linea);box-shadow:var(--sombra);padding:16px;margin-top:14px}
+  .grafica h3{color:var(--azul);font-size:.95rem;margin:0 0 10px}
+  .tabla-scroll{overflow-x:auto;margin-top:14px;border-radius:var(--r);box-shadow:var(--sombra)}
+  table{width:100%;border-collapse:collapse;background:#fff;font-size:.82rem;min-width:1050px}
+  th{background:var(--azul);color:#fff;text-align:left;padding:8px 9px;font-size:.68rem;text-transform:uppercase;white-space:nowrap}
+  td{padding:7px 9px;border-bottom:1px solid var(--linea);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  .num{text-align:right}
+  tr.tot td{font-weight:800;background:var(--azul-bg)}
+  .clic{cursor:pointer}
+  .clic:hover{background:#f2f6fb}
+  .falta{font-size:.68rem;background:var(--ambar-bg);color:#a4700a;padding:2px 7px;border-radius:12px;font-weight:700;margin-right:3px;display:inline-block}
+  @media print{ .no-imprimir,.barra,.nav-sec{display:none!important} body{background:#fff} .tabla-scroll{overflow:visible} }
+</style>
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" onclick="location.href='index.html'">← Inicio</button>
+</div>
+
+<div class="contenedor">
+  <div class="nav-sec">
+    <a href="index.html">🚚 Salidas</a>
+    <a href="gasolina.html">⛽ Gasolina</a>
+    <a href="incidentes.html">⚠️ Incidentes</a>
+    <a href="flota.html">🚛 Flota</a>
+    <a href="gps.html">📍 GPS</a>
+  </div>
+  <div class="seccion-tit">
+    <h2>📈 Tablero de viajes</h2>
+    <div style="flex:1"></div>
+    <button class="btn fantasma chico no-imprimir" onclick="window.print()">🖨️ Imprimir / PDF</button>
+  </div>
+
+  <div class="filtros no-imprimir">
+    <div class="campo"><label>Desde</label><input type="date" id="f-desde" onchange="cargar()"></div>
+    <div class="campo"><label>Hasta</label><input type="date" id="f-hasta" onchange="cargar()"></div>
+    <div class="campo"><label>Camioneta</label><select id="f-unidad" onchange="cargar()"><option value="">Todas</option></select></div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="grafica"><h3>💰 Costo por viaje (gasolina + casetas + otros)</h3><canvas id="g-costos" height="110"></canvas></div>
+  <div class="grafica"><h3>⏱️ Tiempo por viaje: en movimiento vs parado (horas)</h3><canvas id="g-tiempos" height="110"></canvas></div>
+
+  <div class="tabla-scroll">
+  <table id="t-viajes"><thead><tr>
+    <th>Folio</th><th>Camioneta</th><th>Operador</th><th>Salida</th><th>Destino / actividad</th>
+    <th class="num">Duración</th><th class="num">En mov.</th><th class="num">Parado</th><th class="num">Paradas</th>
+    <th class="num">Km</th><th class="num">Vel prom</th><th class="num">Vel máx</th>
+    <th class="num">Gasolina</th><th class="num">Casetas</th><th class="num">Otros</th><th class="num">Total</th><th class="num">$/km</th>
+    <th>Por capturar</th>
+  </tr></thead><tbody></tbody></table>
+  </div>
+  <p style="color:var(--gris);font-size:.8rem">
+    ⏱️ Tiempos y velocidades salen del GPS (paradas de 5+ min cuentan como tiempo parado). Km: del odómetro (km final − inicial) y si falta, del GPS.
+    💲/km = costo total del viaje entre km. Las etiquetas naranjas marcan lo que falta capturar para que los números queden exactos.
+  </p>
+</div>
+
+<script src="comun.js"></script>
+<script src="https://unpkg.com/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script>
+let YO=null, VIAJES=[], chCostos=null, chTiempos=null;
+function dinero(n){ const x=parseFloat(n); return isNaN(x)?"—":"$"+x.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function horas(min){ if(min==null) return "—"; const h=Math.floor(min/60), m=min%60; return h?(h+" h "+(m?m+" m":"")):(m+" min"); }
+
+async function inicio(){
+  YO=await exigirSesion(); if(!YO) return;
+  // por defecto: últimos 60 días (para abarcar los viajes largos)
+  const hoy=fechaHoy();
+  const d=new Date(Date.now()-60*86400000);
+  document.getElementById("f-desde").value=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  document.getElementById("f-hasta").value=hoy;
+  const unidades=await api.get("/api/unidades");
+  document.getElementById("f-unidad").innerHTML=`<option value="">Todas</option>`+unidades.map(u=>`<option>${escaparHTML(u.nombre)}</option>`).join("");
+  await cargar();
+}
+
+async function cargar(){
+  const q="desde="+document.getElementById("f-desde").value+"&hasta="+document.getElementById("f-hasta").value+
+    (document.getElementById("f-unidad").value?("&unidad="+encodeURIComponent(document.getElementById("f-unidad").value)):"");
+  const d=await api.get("/api/dashboard-viajes?"+q);
+  VIAJES=d.viajes||[];
+  pintar();
+}
+
+function pintar(){
+  const vs=VIAJES;
+  // ---- tarjetas ----
+  const kmT=vs.reduce((s,v)=>s+(v.km||0),0);
+  const durT=vs.reduce((s,v)=>s+v.duracion_min,0);
+  const muertoT=vs.reduce((s,v)=>s+v.detenido_min,0);
+  const gastoT=vs.reduce((s,v)=>s+v.total,0);
+  const velMaxG=Math.max(0,...vs.map(v=>v.vel_max||0));
+  const pend=vs.filter(v=>v.pendientes.cargas_sin_costo||v.pendientes.sin_km_final).length;
+  document.getElementById("stats").innerHTML=[
+    {v:vs.length,e:"Viajes"},
+    {v:kmT?kmT.toLocaleString()+" km":"—",e:"Km recorridos"},
+    {v:horas(durT),e:"Tiempo de viaje"},
+    {v:horas(muertoT),e:"Tiempo parado"},
+    {v:dinero(gastoT),e:"Gasto total"},
+    {v:(kmT&&gastoT)?dinero(gastoT/kmT):"—",e:"Costo por km"},
+    {v:velMaxG?velMaxG+" km/h":"—",e:"Vel. máxima"},
+  ].map(s=>`<div class="stat"><div class="v">${s.v}</div><div class="e">${s.e}</div></div>`).join("")
+  +(pend?`<div class="stat"><div class="v" style="color:var(--ambar)">${pend}</div><div class="e">Viajes con capturas pendientes</div></div>`:"");
+
+  // ---- gráficas ----
+  const et=vs.map(v=>v.folio);
+  if(chCostos) chCostos.destroy();
+  chCostos=new Chart(document.getElementById("g-costos"),{
+    type:"bar",
+    data:{labels:et,datasets:[
+      {label:"Gasolina",data:vs.map(v=>v.gasolina),backgroundColor:"#e07312"},
+      {label:"Casetas",data:vs.map(v=>v.casetas),backgroundColor:"#1c3a63"},
+      {label:"Otros",data:vs.map(v=>v.otros),backgroundColor:"#9aa3ad"},
+    ]},
+    options:{responsive:true,scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>"$"+v.toLocaleString()}}},
+      plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+": "+dinero(c.raw)}}}}
+  });
+  if(chTiempos) chTiempos.destroy();
+  chTiempos=new Chart(document.getElementById("g-tiempos"),{
+    type:"bar",
+    data:{labels:et,datasets:[
+      {label:"En movimiento",data:vs.map(v=>+(v.movimiento_min/60).toFixed(1)),backgroundColor:"#0f9d58"},
+      {label:"Parado",data:vs.map(v=>+(v.detenido_min/60).toFixed(1)),backgroundColor:"#e8a317"},
+    ]},
+    options:{responsive:true,scales:{x:{stacked:true},y:{stacked:true,ticks:{callback:v=>v+" h"}}},
+      plugins:{tooltip:{callbacks:{label:c=>c.dataset.label+": "+c.raw+" h"}}}}
+  });
+
+  // ---- tabla ----
+  document.querySelector("#t-viajes tbody").innerHTML=[...vs].reverse().map(v=>{ // más reciente primero
+    const faltas=[];
+    if(v.pendientes.sin_cargas) faltas.push("sin cargas ⛽");
+    else if(v.pendientes.cargas_sin_costo) faltas.push(v.pendientes.cargas_sin_costo+" carga(s) sin costo");
+    if(v.pendientes.sin_casetas) faltas.push("sin casetas");
+    if(v.pendientes.sin_km_final) faltas.push("sin km final");
+    if(!v.gps) faltas.push("sin GPS");
+    return `<tr class="clic" onclick="location.href='resumen.html?id=${v.id}'">
+      <td><b style="color:var(--azul)">${escaparHTML(v.folio||"")}</b>${v.estado!=="finalizado"?" 🟡":""}</td>
+      <td>${escaparHTML(v.unidad||"")}</td>
+      <td><b style="color:var(--pri)">${escaparHTML(v.operador||"")}</b></td>
+      <td>${fechaBonita(v.fecha_salida)}</td>
+      <td style="white-space:normal;min-width:160px">${escaparHTML(v.descripcion||"")}</td>
+      <td class="num">${horas(v.duracion_min)}</td>
+      <td class="num" style="color:var(--verde)">${horas(v.movimiento_min)}</td>
+      <td class="num" style="color:#a4700a">${horas(v.detenido_min)}</td>
+      <td class="num">${v.paradas||0}</td>
+      <td class="num"><b>${v.km!=null?v.km.toLocaleString():"—"}</b></td>
+      <td class="num">${v.vel_prom!=null?v.vel_prom+" km/h":"—"}</td>
+      <td class="num">${v.vel_max?v.vel_max+" km/h":"—"}</td>
+      <td class="num">${dinero(v.gasolina)}</td>
+      <td class="num">${dinero(v.casetas)}</td>
+      <td class="num">${dinero(v.otros)}</td>
+      <td class="num"><b>${dinero(v.total)}</b></td>
+      <td class="num">${v.costo_km!=null?dinero(v.costo_km):"—"}</td>
+      <td>${faltas.map(f=>`<span class="falta">⚠️ ${f}</span>`).join("")||"✅"}</td>
+    </tr>`;
+  }).join("")||`<tr><td colspan="18" style="color:var(--gris)">No hay viajes en el rango elegido.</td></tr>`;
+}
+
+inicio();
+</script>
+</body>
+</html>
