@@ -968,6 +968,14 @@ const servidor = http.createServer(async (req, res) => {
     }
     if (ruta === "/api/cargas" && req.method === "POST") {
       const b = JSON.parse((await leerCuerpo(req)).toString() || "{}");
+      // Evitar duplicados: misma unidad + fecha + hora + monto = es la misma carga
+      const horaN = String(b.hora || "").trim();
+      const costoN = parseFloat(b.costo);
+      if (horaN && !isNaN(costoN)) {
+        const candidatos = db.prepare("SELECT id,costo FROM cargas WHERE unidad=? AND fecha=? AND hora=?").all(b.unidad || "", b.fecha || "", horaN);
+        const dup = candidatos.find((c) => parseFloat(c.costo) === costoN);
+        if (dup) return json(res, 200, { id: dup.id, duplicado: true });
+      }
       const id = uid();
       db.prepare(`INSERT INTO cargas (id,fecha,hora,unidad,lugar,tipo_pago,kilometraje,nivel_combustible,costo,operador,firma_operador,observaciones,creado,creado_por,actualizado,actualizado_por)
                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
@@ -976,6 +984,50 @@ const servidor = http.createServer(async (req, res) => {
       avisarCambio(id, "carga");
       return json(res, 200, { id });
     }
+    // ---- Limpieza de cargas duplicadas (misma unidad + fecha + hora + monto; solo admin) ----
+    if (ruta === "/api/cargas/deduplicar" && req.method === "POST") {
+      if (!esAdmin(yo)) return json(res, 403, { error: "Solo administrador" });
+      const todas = db.prepare("SELECT id,unidad,fecha,hora,costo FROM cargas ORDER BY creado").all();
+      const vistos = {};
+      let eliminadas = 0;
+      for (const c of todas) {
+        if (!String(c.hora || "").trim()) continue; // sin hora no se puede comparar con certeza
+        const monto = parseFloat(c.costo);
+        const clave = c.unidad + "|" + c.fecha + "|" + c.hora + "|" + (isNaN(monto) ? String(c.costo || "") : monto);
+        if (vistos[clave]) {
+          // las fotos del duplicado se pasan al registro que se conserva (no se pierde evidencia)
+          db.prepare("UPDATE fotos SET ref_id=? WHERE tipo='carga' AND ref_id=?").run(vistos[clave], c.id);
+          db.prepare("DELETE FROM cargas WHERE id=?").run(c.id);
+          eliminadas++;
+        } else {
+          vistos[clave] = c.id;
+        }
+      }
+      if (eliminadas) avisarCambio("cargas", "carga");
+      return json(res, 200, { ok: true, eliminadas });
+    }
+
+    // ---- Análisis de gastos de gasolina: cada carga con el viaje al que pertenece ----
+    if (ruta === "/api/gastos-gasolina" && req.method === "GET") {
+      const mes = url.searchParams.get("mes") || hoyPlanta().slice(0, 7); // YYYY-MM
+      const cargasMes = db.prepare(`SELECT id,fecha,hora,unidad,lugar,tipo_pago,kilometraje,costo,operador
+                                    FROM cargas WHERE fecha LIKE ? ORDER BY fecha, hora`).all(mes + "%");
+      // viajes que tocan el mes (salieron o regresaron dentro del mes)
+      const viajesMes = db.prepare(`SELECT id,folio,unidad,operador,fecha_salida,hora_salida,fecha_regreso_real,hora_regreso,estado
+                                    FROM viajes WHERE fecha_salida LIKE ? OR fecha_regreso_real LIKE ? ORDER BY fecha_salida`).all(mes + "%", mes + "%");
+      const ventanas = viajesMes.map((v) => ({
+        v,
+        ini: msDePlanta(v.fecha_salida, v.hora_salida || "00:00") - 30 * 60000,
+        fin: (v.estado === "finalizado" ? msDePlanta(v.fecha_regreso_real || v.fecha_salida, v.hora_regreso || "23:59") : Date.now()) + 30 * 60000,
+      }));
+      for (const c of cargasMes) {
+        const ms = msDePlanta(c.fecha, c.hora || "12:00");
+        const w = ventanas.find((w) => w.v.unidad === c.unidad && ms >= w.ini && ms <= w.fin);
+        if (w) { c.viaje_id = w.v.id; c.viaje_folio = w.v.folio; c.viaje_operador = w.v.operador; c.viaje_fecha = w.v.fecha_salida; }
+      }
+      return json(res, 200, { mes, cargas: cargasMes });
+    }
+
     const mCarga = ruta.match(/^\/api\/carga\/([^/]+)$/);
     if (mCarga && req.method === "GET") {
       const c = obtenerCarga(mCarga[1]);

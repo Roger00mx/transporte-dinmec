@@ -233,6 +233,11 @@ async function guardar(){
       if(!confirm("No agregaste la foto del tablero con el kilometraje. ¿Guardar de todos modos?")) return;
     }
     const r=await api.post("/api/cargas", d);
+    if(r.id && r.duplicado){
+      alert("⚠️ Esta carga YA estaba registrada (misma unidad, fecha, hora y monto). Se abrirá el registro existente para no duplicar.");
+      location.href="carga.html?id="+r.id;
+      return;
+    }
     if(r.id){
       aviso("Guardando fotos…");
       await subirPendientes(r.id);

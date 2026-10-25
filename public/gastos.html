@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gastos de gasolina — Control de Transporte DINMEC</title>
+<meta name="theme-color" content="#1c3a63">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icono-192.png">
+<link rel="stylesheet" href="estilos.css">
+<style>
+  .filtros{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:14px}
+  .filtros .campo{min-width:150px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-top:14px}
+  .stat{background:#fff;border-radius:12px;border:1px solid var(--linea);box-shadow:var(--sombra);padding:14px;text-align:center}
+  .stat .v{font-size:1.3rem;font-weight:800;color:var(--azul)}
+  .stat .e{font-size:.72rem;color:var(--gris);text-transform:uppercase;font-weight:700;letter-spacing:.3px}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:var(--r);overflow:hidden;box-shadow:var(--sombra);font-size:.9rem}
+  th{background:var(--azul);color:#fff;text-align:left;padding:9px 12px;font-size:.78rem;text-transform:uppercase}
+  td{padding:8px 12px;border-bottom:1px solid var(--linea)}
+  tr:last-child td{border-bottom:none}
+  .num{text-align:right}
+  tr.tot td{font-weight:800;background:var(--azul-bg)}
+  .clic{cursor:pointer}
+  .clic:hover{background:#f2f6fb}
+  @media print{ .no-imprimir,.barra,.nav-sec{display:none!important} body{background:#fff} }
+</style>
+</head>
+<body>
+<div class="barra">
+  <div class="logo"><span class="lg"><img src="/logo.png" alt="DINMEC"></span> <span>Control de Transporte</span></div>
+  <div class="crece"></div>
+  <button class="btn chico" style="background:rgba(255,255,255,.15);color:#fff" onclick="location.href='gasolina.html'">← Volver</button>
+</div>
+
+<div class="contenedor">
+  <div class="nav-sec">
+    <a href="index.html">🚚 Salidas</a>
+    <a class="activa" href="gasolina.html">⛽ Gasolina</a>
+    <a href="incidentes.html">⚠️ Incidentes</a>
+    <a href="flota.html">🚛 Flota</a>
+    <a href="gps.html">📍 GPS</a>
+  </div>
+  <div class="seccion-tit">
+    <h2>💲 Gastos de gasolina</h2>
+    <div style="flex:1"></div>
+    <button class="btn peligro chico no-imprimir" id="btn-dedup" style="display:none" onclick="quitarDuplicados()">🧹 Quitar duplicados</button>
+    <button class="btn fantasma chico no-imprimir" onclick="window.print()">🖨️ Imprimir / PDF</button>
+  </div>
+
+  <div class="filtros no-imprimir">
+    <div class="campo"><label>Mes</label><input type="month" id="f-mes" onchange="cargar()"></div>
+    <div class="campo"><label>Camioneta</label><select id="f-unidad" onchange="pintar()"><option value="">Todas</option></select></div>
+    <div class="campo"><label>Operador</label><select id="f-operador" onchange="pintar()"><option value="">Todos</option></select></div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="seccion-tit"><h2 style="font-size:1rem">🚛 Por camioneta</h2></div>
+  <table id="t-unidad"><thead><tr><th>Camioneta</th><th class="num">Cargas</th><th class="num">Gastado ($)</th></tr></thead><tbody></tbody></table>
+
+  <div class="seccion-tit"><h2 style="font-size:1rem">👷 Por operador</h2></div>
+  <table id="t-operador"><thead><tr><th>Operador</th><th class="num">Cargas</th><th class="num">Gastado ($)</th></tr></thead><tbody></tbody></table>
+
+  <div class="seccion-tit"><h2 style="font-size:1rem">🧳 Por viaje</h2></div>
+  <table id="t-viaje"><thead><tr><th>Folio</th><th>Camioneta</th><th>Operador del viaje</th><th>Salida</th><th class="num">Cargas</th><th class="num">Gasolina ($)</th></tr></thead><tbody></tbody></table>
+
+  <div class="seccion-tit"><h2 style="font-size:1rem">📋 Detalle de cargas</h2></div>
+  <table id="t-detalle"><thead><tr><th>Fecha</th><th>Hora</th><th>Camioneta</th><th>Lugar</th><th>Operador</th><th>Viaje</th><th class="num">Costo ($)</th></tr></thead><tbody></tbody></table>
+</div>
+
+<script src="comun.js"></script>
+<script>
+let YO=null, CARGAS=[];
+function dinero(n){ const x=parseFloat(n); return isNaN(x)?"—":"$"+x.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+async function inicio(){
+  YO=await exigirSesion(); if(!YO) return;
+  if(YO.rol_app==="admin") document.getElementById("btn-dedup").style.display="inline-flex";
+  document.getElementById("f-mes").value=fechaHoy().slice(0,7);
+  await cargar();
+  conectarEnVivo(()=>cargar());
+}
+
+async function cargar(){
+  const mes=document.getElementById("f-mes").value;
+  const d=await api.get("/api/gastos-gasolina?mes="+mes);
+  CARGAS=d.cargas||[];
+  // llenar los filtros con lo que exista en el mes (conservando la selección)
+  llenarFiltro("f-unidad", [...new Set(CARGAS.map(c=>c.unidad).filter(Boolean))], "Todas");
+  llenarFiltro("f-operador", [...new Set(CARGAS.map(c=>c.operador).filter(Boolean))], "Todos");
+  pintar();
+}
+function llenarFiltro(id, valores, todos){
+  const sel=document.getElementById(id);
+  const actual=sel.value;
+  sel.innerHTML=`<option value="">${todos}</option>`+valores.sort().map(v=>`<option>${escaparHTML(v)}</option>`).join("");
+  if(valores.includes(actual)) sel.value=actual;
+}
+
+function pintar(){
+  const fu=document.getElementById("f-unidad").value;
+  const fo=document.getElementById("f-operador").value;
+  const lista=CARGAS.filter(c=>(!fu||c.unidad===fu)&&(!fo||c.operador===fo));
+  const monto=c=>parseFloat(c.costo)||0;
+  const total=lista.reduce((s,c)=>s+monto(c),0);
+  const sinCosto=lista.filter(c=>isNaN(parseFloat(c.costo))).length;
+
+  // tarjetas
+  document.getElementById("stats").innerHTML=[
+    {v:dinero(total)||"$0.00", e:"Total gastado"},
+    {v:lista.length, e:"Cargas"},
+    {v:lista.length?dinero(total/Math.max(1,lista.length-sinCosto)):"—", e:"Promedio por carga"},
+  ].map(s=>`<div class="stat"><div class="v">${s.v}</div><div class="e">${s.e}</div></div>`).join("")
+  +(sinCosto?`<div class="stat"><div class="v" style="color:var(--ambar)">${sinCosto}</div><div class="e">Cargas sin costo capturado</div></div>`:"");
+
+  // agrupadores
+  grupo("t-unidad", lista, c=>c.unidad||"(sin camioneta)");
+  grupo("t-operador", lista, c=>c.operador||"(sin operador)");
+
+  // por viaje
+  const porViaje={};
+  for(const c of lista){
+    const k=c.viaje_folio||"__sin";
+    porViaje[k]=porViaje[k]||{folio:c.viaje_folio, id:c.viaje_id, unidad:c.unidad, operador:c.viaje_operador, fecha:c.viaje_fecha, n:0, total:0};
+    porViaje[k].n++; porViaje[k].total+=monto(c);
+  }
+  const filasV=Object.values(porViaje).sort((a,b)=>(a.fecha||"9999")<(b.fecha||"9999")?-1:1);
+  document.querySelector("#t-viaje tbody").innerHTML=filasV.map(v=>v.folio?`
+    <tr class="clic" onclick="location.href='resumen.html?id=${v.id}'">
+      <td><b style="color:var(--azul)">${escaparHTML(v.folio)}</b></td>
+      <td>${escaparHTML(v.unidad||"")}</td>
+      <td><b style="color:var(--pri)">${escaparHTML(v.operador||"—")}</b></td>
+      <td>${fechaBonita(v.fecha)}</td>
+      <td class="num">${v.n}</td>
+      <td class="num"><b>${dinero(v.total)}</b></td>
+    </tr>`:`
+    <tr><td colspan="3" style="color:var(--gris)">⛽ Cargas fuera de un viaje registrado</td><td></td>
+      <td class="num">${v.n}</td><td class="num"><b>${dinero(v.total)}</b></td></tr>`).join("")
+    +(filasV.length?`<tr class="tot"><td colspan="4">TOTAL</td><td class="num">${lista.length}</td><td class="num">${dinero(total)}</td></tr>`
+    :`<tr><td colspan="6" style="color:var(--gris)">Sin cargas en este mes con los filtros elegidos.</td></tr>`);
+
+  // detalle
+  document.querySelector("#t-detalle tbody").innerHTML=lista.map(c=>`
+    <tr class="clic" onclick="location.href='carga.html?id=${c.id}'">
+      <td>${fechaBonita(c.fecha)}</td><td>${escaparHTML(c.hora||"")}</td>
+      <td>${escaparHTML(c.unidad||"")}</td><td>${escaparHTML(c.lugar||"")}</td>
+      <td>${escaparHTML(c.operador||"")}</td>
+      <td>${c.viaje_folio?escaparHTML(c.viaje_folio):"—"}</td>
+      <td class="num"><b>${dinero(c.costo)}</b></td>
+    </tr>`).join("") || `<tr><td colspan="7" style="color:var(--gris)">Sin cargas.</td></tr>`;
+}
+
+function grupo(tabla, lista, llave){
+  const g={};
+  for(const c of lista){
+    const k=llave(c);
+    g[k]=g[k]||{n:0,total:0};
+    g[k].n++; g[k].total+=(parseFloat(c.costo)||0);
+  }
+  const filas=Object.entries(g).sort((a,b)=>b[1].total-a[1].total);
+  const total=filas.reduce((s,[,v])=>s+v.total,0);
+  document.querySelector("#"+tabla+" tbody").innerHTML=filas.map(([k,v])=>`
+    <tr><td>${escaparHTML(k)}</td><td class="num">${v.n}</td><td class="num"><b>${dinero(v.total)}</b></td></tr>`).join("")
+    +(filas.length?`<tr class="tot"><td>TOTAL</td><td class="num">${filas.reduce((s,[,v])=>s+v.n,0)}</td><td class="num">${dinero(total)}</td></tr>`
+    :`<tr><td colspan="3" style="color:var(--gris)">Sin datos.</td></tr>`);
+}
+
+async function quitarDuplicados(){
+  if(!confirm("Se revisarán TODAS las cargas: si hay varias con la misma camioneta, fecha, hora y monto, se dejará solo una (sus fotos se conservan en la que queda). ¿Continuar?")) return;
+  const r=await api.post("/api/cargas/deduplicar",{});
+  if(r.ok){ aviso(r.eliminadas?("🧹 Se eliminaron "+r.eliminadas+" duplicado(s)"):"No había duplicados ✅"); cargar(); }
+  else aviso(r.error||"No se pudo");
+}
+
+inicio();
+</script>
+</body>
+</html>
