@@ -149,7 +149,7 @@ function pintar(){
   });
 
   // ---- tabla ----
-  document.querySelector("#t-viajes tbody").innerHTML=vs.map(v=>{
+  document.querySelector("#t-viajes tbody").innerHTML=[...vs].reverse().map(v=>{ // más reciente primero
     const faltas=[];
     if(v.pendientes.sin_cargas) faltas.push("sin cargas ⛽");
     else if(v.pendientes.cargas_sin_costo) faltas.push(v.pendientes.cargas_sin_costo+" carga(s) sin costo");
