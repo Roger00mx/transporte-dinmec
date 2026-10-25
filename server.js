@@ -1007,6 +1007,89 @@ const servidor = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, eliminadas });
     }
 
+    // ---- Tablero de viajes: tiempos, costos, velocidades, tiempos muertos y pendientes ----
+    if (ruta === "/api/dashboard-viajes" && req.method === "GET") {
+      const desde = url.searchParams.get("desde") || hoyPlanta().slice(0, 7) + "-01";
+      const hasta = url.searchParams.get("hasta") || hoyPlanta();
+      const unidadF = url.searchParams.get("unidad") || "";
+      let sql = "SELECT * FROM viajes WHERE fecha_salida>=? AND fecha_salida<=?";
+      const args = [desde, hasta];
+      if (unidadF) { sql += " AND unidad=?"; args.push(unidadF); }
+      sql += " ORDER BY fecha_salida, hora_salida";
+      const viajes = db.prepare(sql).all(...args);
+      const parseArr = (s) => { try { const x = JSON.parse(s); return Array.isArray(x) ? x : []; } catch { return []; } };
+      const out = [];
+      for (const v of viajes) {
+        const fechaFin = v.estado === "finalizado" ? (v.fecha_regreso_real || v.fecha_salida) : hoyPlanta();
+        const iniMs = msDePlanta(v.fecha_salida, v.hora_salida || "00:00");
+        const finMs = v.estado === "finalizado" ? msDePlanta(fechaFin, v.hora_regreso || "23:59") : Date.now();
+        const durMin = Math.max(0, Math.round((finMs - iniMs) / 60000));
+        // ---- GPS: distancia, velocidad máxima y tiempo detenido (paradas) ----
+        const uni = db.prepare("SELECT gps_imei FROM unidades WHERE nombre=?").get(v.unidad);
+        let dist = 0, velMax = 0, detenidoMin = 0, paradasN = 0, gpsOk = false;
+        if (uni && uni.gps_imei) {
+          try {
+            let puntos = []; const paradasArr = [];
+            for (const f of listaFechas(v.fecha_salida, fechaFin)) {
+              const pts = await rutaGPS(uni.gps_imei, f);
+              if (Array.isArray(pts)) puntos = puntos.concat(pts);
+              const st = await paradasGPS(uni.gps_imei, f);
+              if (Array.isArray(st)) paradasArr.push(...st);
+            }
+            puntos = puntos.filter((p) => p.t >= iniMs && p.t <= finMs).sort((a, b) => a.t - b.t);
+            if (puntos.length > 1) {
+              gpsOk = true;
+              for (let i = 1; i < puntos.length; i++) dist += haversineKm(puntos[i - 1].lat, puntos[i - 1].lng, puntos[i].lat, puntos[i].lng);
+              for (const p of puntos) if (p.s > velMax) velMax = p.s;
+            }
+            const unicos = {};
+            for (const s of paradasArr) if (s.startTime >= iniMs && s.startTime <= finMs) unicos[s.id || s.startTime] = s;
+            for (const s of Object.values(unicos)) {
+              paradasN++;
+              detenidoMin += Math.max(0, Math.round((Math.min(s.endTime || finMs, finMs) - Math.max(s.startTime, iniMs)) / 60000));
+            }
+            detenidoMin = Math.min(detenidoMin, durMin);
+          } catch (_) {}
+        }
+        const movMin = Math.max(0, durMin - detenidoMin);
+        // ---- Gasolina del viaje (cargas de esa unidad dentro de la ventana) ----
+        const cargasV = db.prepare("SELECT costo,hora,fecha FROM cargas WHERE unidad=? AND fecha>=? AND fecha<=?")
+          .all(v.unidad, v.fecha_salida, fechaFin)
+          .filter((c) => { const ms = msDePlanta(c.fecha, c.hora || "12:00"); return ms >= iniMs - 30 * 60000 && ms <= finMs + 30 * 60000; });
+        const gas = cargasV.reduce((s, c) => s + (parseFloat(c.costo) || 0), 0);
+        const cargasSinCosto = cargasV.filter((c) => isNaN(parseFloat(c.costo))).length;
+        // ---- Casetas y otros gastos ----
+        const casetasArr = parseArr(v.casetas);
+        const gastosArr = parseArr(v.gastos);
+        const casetas = casetasArr.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
+          + gastosArr.filter((g) => g.tipo === "Casetas").reduce((s, g) => s + (parseFloat(g.monto) || 0), 0);
+        const otros = gastosArr.filter((g) => g.tipo !== "Casetas").reduce((s, g) => s + (parseFloat(g.monto) || 0), 0);
+        const total = gas + casetas + otros;
+        // ---- Kilómetros: odómetro (km final − inicial) o, si falta, el GPS ----
+        const kmOdo = parseFloat(v.km_final) - parseFloat(v.km_inicial);
+        const km = (!isNaN(kmOdo) && kmOdo > 0) ? Math.round(kmOdo) : (gpsOk ? Math.round(dist) : null);
+        out.push({
+          id: v.id, folio: v.folio, unidad: v.unidad, operador: v.operador,
+          descripcion: (v.descripcion || "").replace(/\s+/g, " ").slice(0, 80),
+          fecha_salida: v.fecha_salida, estado: v.estado,
+          duracion_min: durMin, movimiento_min: movMin, detenido_min: detenidoMin, paradas: paradasN, gps: gpsOk,
+          km, km_gps: gpsOk ? Math.round(dist * 10) / 10 : null,
+          vel_max: Math.round(velMax),
+          vel_prom: (gpsOk && movMin > 0) ? Math.round(dist / (movMin / 60)) : null,
+          gasolina: Math.round(gas * 100) / 100, casetas: Math.round(casetas * 100) / 100,
+          otros: Math.round(otros * 100) / 100, total: Math.round(total * 100) / 100,
+          costo_km: (km && total) ? Math.round(total / km * 100) / 100 : null,
+          pendientes: {
+            cargas_sin_costo: cargasSinCosto,
+            sin_cargas: cargasV.length === 0,
+            sin_casetas: casetas === 0,
+            sin_km_final: !String(v.km_final || "").trim(),
+          },
+        });
+      }
+      return json(res, 200, { desde, hasta, viajes: out });
+    }
+
     // ---- Análisis de gastos de gasolina: cada carga con el viaje al que pertenece ----
     if (ruta === "/api/gastos-gasolina" && req.method === "GET") {
       const mes = url.searchParams.get("mes") || hoyPlanta().slice(0, 7); // YYYY-MM
