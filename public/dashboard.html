@@ -59,20 +59,22 @@
 
   <div class="stats" id="stats"></div>
 
+  <div class="grafica"><h3>📊 Indicadores por camioneta</h3><div class="tabla-scroll" style="box-shadow:none;margin-top:0"><table id="t-ind" style="min-width:600px"></table></div></div>
+
   <div class="grafica"><h3>💰 Costo por viaje (gasolina + casetas + otros)</h3><canvas id="g-costos" height="110"></canvas></div>
   <div class="grafica"><h3>⏱️ Tiempo por viaje: en movimiento vs parado (horas)</h3><canvas id="g-tiempos" height="110"></canvas></div>
 
   <div class="tabla-scroll">
   <table id="t-viajes"><thead><tr>
-    <th>Folio</th><th>Camioneta</th><th>Operador</th><th>Salida</th><th>Destino / actividad</th>
-    <th class="num">Duración</th><th class="num">En mov.</th><th class="num">Parado</th><th class="num">Paradas</th>
-    <th class="num">Km</th><th class="num">Vel prom</th><th class="num">Vel máx</th>
-    <th class="num">Gasolina</th><th class="num">Casetas</th><th class="num">Otros</th><th class="num">Total</th><th class="num">$/km</th>
+    <th>Folio</th><th>Camioneta</th><th>Op.</th><th>Salida</th><th>Destino / actividad</th>
+    <th class="num">Duración</th><th class="num">Gasto total</th><th class="num">Gasolina</th><th class="num">Casetas</th><th class="num">Otros</th>
+    <th class="num">En mov.</th><th class="num">Parado</th><th class="num">Paradas</th>
+    <th class="num">Km</th><th class="num">Vel prom</th><th class="num">Vel máx</th><th class="num">$/km</th>
     <th>Por capturar</th>
   </tr></thead><tbody></tbody></table>
   </div>
   <p style="color:var(--gris);font-size:.8rem">
-    ⏱️ Tiempos y velocidades salen del GPS (paradas de 5+ min cuentan como tiempo parado). Km: del odómetro (km final − inicial) y si falta, del GPS.
+    Op. = iniciales del operador (pasa el cursor para ver el nombre completo). ⏱️ Tiempos y velocidades salen del GPS (paradas de 5+ min cuentan como tiempo parado). Km: del odómetro (km final − inicial) y si falta, del GPS.
     💲/km = costo total del viaje entre km. Las etiquetas naranjas marcan lo que falta capturar para que los números queden exactos.
   </p>
 </div>
@@ -82,6 +84,33 @@
 <script>
 let YO=null, VIAJES=[], chCostos=null, chTiempos=null;
 function dinero(n){ const x=parseFloat(n); return isNaN(x)?"—":"$"+x.toLocaleString("es-MX",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function iniciales(n){ return String(n||"").trim().split(/\s+/).filter(Boolean).map(p=>p[0].toUpperCase()).join(""); }
+function pct(a,b){ return b?(a/b*100).toFixed(1)+" %":"—"; }
+function completo(v){ const p=v.pendientes||{}; return !p.sin_cargas && !p.cargas_sin_costo && !p.sin_km_final && v.gps; }
+function indicadores(vs){
+  const grupos={}; vs.forEach(v=>{ (grupos[v.unidad||"—"]=grupos[v.unidad||"—"]||[]).push(v); });
+  const cols=Object.keys(grupos).sort().map(k=>({nombre:k,vs:grupos[k]}));
+  if(cols.length>1) cols.push({nombre:"Total",vs:vs,tot:true});
+  const N=vs.length;
+  const calc=g=>{
+    const n=g.length, conKm=g.filter(v=>v.km), km=conKm.reduce((s,v)=>s+v.km,0);
+    const gpsT=g.filter(v=>v.gps), durG=gpsT.reduce((s,v)=>s+v.duracion_min,0);
+    const dur=g.reduce((s,v)=>s+v.duracion_min,0), det=gpsT.reduce((s,v)=>s+v.detenido_min,0), mov=gpsT.reduce((s,v)=>s+v.movimiento_min,0);
+    const gasto=g.reduce((s,v)=>s+v.total,0), gasKm=conKm.reduce((s,v)=>s+v.gasolina,0), gastoKm=conKm.reduce((s,v)=>s+v.total,0);
+    return [n, km?km.toLocaleString()+" km":"—", conKm.length?(km/conKm.length).toFixed(1)+" km":"—", n?horas(Math.round(dur/n)):"—",
+      pct(det,durG), pct(mov,durG), gpsT.length?(gpsT.reduce((s,v)=>s+(v.paradas||0),0)/gpsT.length).toFixed(1):"—",
+      dinero(gasto), km?dinero(gastoKm/km):"—", n?dinero(gasto/n):"—", km?dinero(gasKm/km):"—",
+      pct(n,N), pct(g.filter(completo).length,n)];
+  };
+  const filas=[["Viajes realizados","Conteo de folios"],["Kilómetros recorridos","Suma de km"],["Distancia promedio por viaje","Km ÷ viajes con km"],
+    ["Tiempo promedio por viaje","Duración ÷ viajes"],["% tiempo detenido","Parado ÷ duración (viajes con GPS)"],["% tiempo en movimiento","En mov. ÷ duración (viajes con GPS)"],
+    ["Paradas por viaje","Paradas ÷ viajes con GPS"],["Gasto total registrado","Gasolina + casetas + otros"],["Costo por kilómetro","Gasto ÷ km (viajes con km)"],
+    ["Costo promedio por viaje","Gasto ÷ viajes"],["Gasolina por km","Gasolina ÷ km (viajes con km)"],["Participación de la unidad","Viajes de la unidad ÷ total"],
+    ["Viajes con captura completa","Con cargas, costos, km final y GPS"]];
+  const datos=cols.map(c=>calc(c.vs));
+  document.getElementById("t-ind").innerHTML=`<thead><tr><th>Indicador</th><th>Cálculo</th>${cols.map(c=>`<th class="num">${escaparHTML(c.nombre)}</th>`).join("")}</tr></thead><tbody>`+
+    filas.map((f,i)=>`<tr><td><b>${f[0]}</b></td><td style="color:var(--gris);font-size:.75rem">${f[1]}</td>${datos.map((d,j)=>`<td class="num"${cols[j].tot?' style="font-weight:800;background:var(--azul-bg)"':''}>${d[i]}</td>`).join("")}</tr>`).join("")+`</tbody>`;
+}
 function horas(min){ if(min==null) return "—"; const h=Math.floor(min/60), m=min%60; return h?(h+" h "+(m?m+" m":"")):(m+" min"); }
 
 async function inicio(){
@@ -124,6 +153,7 @@ function pintar(){
   ].map(s=>`<div class="stat"><div class="v">${s.v}</div><div class="e">${s.e}</div></div>`).join("")
   +(pend?`<div class="stat"><div class="v" style="color:var(--ambar)">${pend}</div><div class="e">Viajes con capturas pendientes</div></div>`:"");
 
+  indicadores(vs);
   // ---- gráficas ----
   const et=vs.map(v=>v.folio);
   if(chCostos) chCostos.destroy();
@@ -159,20 +189,20 @@ function pintar(){
     return `<tr class="clic" onclick="location.href='resumen.html?id=${v.id}'">
       <td><b style="color:var(--azul)">${escaparHTML(v.folio||"")}</b>${v.estado!=="finalizado"?" 🟡":""}</td>
       <td>${escaparHTML(v.unidad||"")}</td>
-      <td><b style="color:var(--pri)">${escaparHTML(v.operador||"")}</b></td>
+      <td title="${escaparHTML(v.operador||"")}"><b style="color:var(--pri)">${escaparHTML(iniciales(v.operador))}</b></td>
       <td>${fechaBonita(v.fecha_salida)}</td>
       <td style="white-space:normal;min-width:160px">${escaparHTML(v.descripcion||"")}</td>
       <td class="num">${horas(v.duracion_min)}</td>
+      <td class="num"><b>${dinero(v.total)}</b></td>
+      <td class="num">${dinero(v.gasolina)}</td>
+      <td class="num">${dinero(v.casetas)}</td>
+      <td class="num">${dinero(v.otros)}</td>
       <td class="num" style="color:var(--verde)">${horas(v.movimiento_min)}</td>
       <td class="num" style="color:#a4700a">${horas(v.detenido_min)}</td>
       <td class="num">${v.paradas||0}</td>
       <td class="num"><b>${v.km!=null?v.km.toLocaleString():"—"}</b></td>
       <td class="num">${v.vel_prom!=null?v.vel_prom+" km/h":"—"}</td>
       <td class="num">${v.vel_max?v.vel_max+" km/h":"—"}</td>
-      <td class="num">${dinero(v.gasolina)}</td>
-      <td class="num">${dinero(v.casetas)}</td>
-      <td class="num">${dinero(v.otros)}</td>
-      <td class="num"><b>${dinero(v.total)}</b></td>
       <td class="num">${v.costo_km!=null?dinero(v.costo_km):"—"}</td>
       <td>${faltas.map(f=>`<span class="falta">⚠️ ${f}</span>`).join("")||"✅"}</td>
     </tr>`;
